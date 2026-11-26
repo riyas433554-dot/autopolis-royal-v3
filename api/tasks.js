@@ -67,6 +67,15 @@ export default async function handler(req, res) {
       if (status !== undefined) patch.status = status;
       if (progress !== undefined) patch.progress = progress;
       if (agent_name !== undefined) patch.agent_name = agent_name;
+      if (status === 'queued') {
+        patch.progress = 0;
+        patch.error = null;
+        patch.started_at = null;
+        patch.completed_at = null;
+        patch.claimed_agent_id = null;
+        patch.lease_expires_at = null;
+        patch.lease_token = null;
+      }
       const { data, error } = await supabase.from('tasks').update(patch).eq('id', id).select().single();
       if (error) throw error;
       return res.status(200).json(data);
