@@ -101,7 +101,7 @@ export default function ECCWorkflow() {
     setNotice('');
     try {
       const body: Record<string, unknown> = { action, agent_id: agentId };
-      if (action === 'start_training') {
+      if (action === 'start_training' || action === 'run_training') {
         body.track = profile.training_level === 0 ? 'foundation' : 'strict_level_' + profile.training_level;
       }
       if (action === 'complete_training' || action === 'record_work') {
@@ -115,7 +115,9 @@ export default function ECCWorkflow() {
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token.trim() },
         body: JSON.stringify(body),
       });
-      setNotice(action.replaceAll('_', ' ') + ' succeeded for ' + (profile.agent?.name || profile.source_agent_key || agentId) + '.');
+      setNotice(action === 'run_training'
+        ? 'AI Academy assessment complete: ' + (result.agent_name || profile.agent?.name || agentId) + ' scored ' + result.evaluation.score + '/100 · ' + result.completion.status + '. ' + result.evaluation.feedback
+        : action.replaceAll('_', ' ') + ' succeeded for ' + (profile.agent?.name || profile.source_agent_key || agentId) + '.');
       if (result?.expelled) setNotice('Agent returned to Academy. Strict training level ' + result.training_level + ' enrolled.');
       await load();
     } catch (err) {
@@ -152,13 +154,12 @@ export default function ECCWorkflow() {
     const id = profile.agent_id;
     const status = profile.lifecycle_status;
     const working = busyKey.startsWith(id + ':');
-    if (status === 'academy') return <button disabled={!!busyKey} onClick={() => void act(profile, 'start_training')} className="rounded-full bg-amber-400 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{working ? 'STARTING…' : 'START TRAINING'}</button>;
-    if (status === 'training' || status === 'company') {
-      const action = status === 'training' ? 'complete_training' : 'record_work';
+    if (status === 'academy' || status === 'training') return <button disabled={!!busyKey} onClick={() => void act(profile, 'run_training')} className="rounded-full bg-amber-400 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{working ? 'ASSESSING…' : status === 'training' ? 'RESUME AI TRAINING' : 'RUN AI TRAINING'}</button>;
+    if (status === 'company') {
       return <div className="mt-2 grid grid-cols-[1fr_1fr_auto] gap-1.5">
         <label className="text-[10px] text-slate-400">Score<input type="number" min="0" max="100" value={scores[id] ?? '80'} onChange={e => setScores(prev => ({ ...prev, [id]: e.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm text-white" /></label>
         <label className="text-[10px] text-slate-400">Mistakes<input type="number" min="0" step="1" value={mistakes[id] ?? '0'} onChange={e => setMistakes(prev => ({ ...prev, [id]: e.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm text-white" /></label>
-        <button disabled={!!busyKey} onClick={() => void act(profile, action)} className="self-end rounded-full border border-amber-400/50 px-3 py-2 text-[10px] font-black text-amber-200 disabled:opacity-50">{working ? 'SAVING…' : status === 'training' ? 'ASSESS' : 'SCORE WORK'}</button>
+        <button disabled={!!busyKey} onClick={() => void act(profile, 'record_work')} className="self-end rounded-full border border-amber-400/50 px-3 py-2 text-[10px] font-black text-amber-200 disabled:opacity-50">{working ? 'SAVING…' : 'SCORE WORK'}</button>
       </div>;
     }
     if (status === 'interview') return <div className="mt-2 flex gap-2">
@@ -175,7 +176,7 @@ export default function ECCWorkflow() {
       <div>
         <p className="text-[10px] font-black tracking-[0.25em] text-cyan-300">ECC · CITY ECOSYSTEM</p>
         <h2 className="mt-1 font-display text-xl font-bold text-white">Agent lifecycle & Academy</h2>
-        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">Pinned ECC role definitions are agent instructions/personas, not trained model weights. This panel controls roster, Academy assessment, interview eligibility and company placement.</p>
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">Pinned ECC role definitions are agent instructions/personas, not trained model weights. AI assessment generates a role-specific work sample, scores it against a rubric, and records the submission/evaluation before graduation eligibility.</p>
       </div>
       <button onClick={() => void load()} disabled={loading || !!busyKey} className="rounded-full border border-white/15 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Refresh</button>
     </div>
