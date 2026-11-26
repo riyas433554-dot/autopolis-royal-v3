@@ -434,7 +434,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
     for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), lantMat); s.position.set(84 + Math.random() * 16, 3 + Math.random() * 5, -80 + Math.random() * 160); s.userData.phase = Math.random() * 6.28; scene.add(s); lanterns.push(s); }
     const birds: THREE.Group[] = [];
     const birdMat = new THREE.MeshBasicMaterial({ color: 0x1a2030 });
-    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.42), birdMat); w1.position.x = -0.8; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 0.8; w2.name = 'wingR'; bg2.add(w1, w2); bg2.userData.r = 55 + i * 9; bg2.userData.h = 52 + (i % 3) * 7; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
+    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 0.42), birdMat); w1.position.x = -1.05; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 1.05; w2.name = 'wingR'; bg2.add(w1, w2); bg2.scale.setScalar(1.45); bg2.userData.r = 48 + i * 7; bg2.userData.h = 48 + (i % 3) * 6; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
 
     // Camera orbit state (starts wide → eased intro fly-over into the default view)
     const cam = { theta: 0.12, phi: 0.6, radius: 268, tx: 0, tz: 0, dTheta: 0.7, dPhi: 0.92, dRadius: 178, dTx: 0, dTz: 0 };
@@ -545,7 +545,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
       jets.forEach((j, i) => { j.scale.y = 1 + Math.sin(t * 2.2 + i * 1.3) * 0.14; j.rotation.y = t * (0.8 + i * 0.15); });
       groups.forEach(g => { g.traverse(o => { if (o.name === 'beacon') o.visible = Math.sin(t * 3) > -0.2; if (o.name === 'orb') { if (o.userData.baseY === undefined) o.userData.baseY = o.position.y; o.position.y = o.userData.baseY + Math.sin(t * 1.3 + o.id) * 0.22; } if (o.name === 'ring') o.rotation.z = t * 0.5; if (o.name === 'spinY') o.rotation.y = t * 1.2; if (o.name === 'onair') (o as THREE.Mesh).visible = Math.sin(t * 2) > -0.6; if (o.name === 'beamPivot') { o.rotation.y = t * 0.45; } }); });
       lanterns.forEach((s, i) => { s.visible = !P.reduced && nightMix > 0.15; if (s.visible) { s.position.y += Math.sin(t * 0.8 + s.userData.phase) * 0.006; s.position.x += Math.sin(t * 0.3 + i) * 0.004; } });
-      birds.forEach((bg2, i) => { bg2.visible = !P.reduced; if (!bg2.visible) return; const a = t * 0.05 + bg2.userData.ph; bg2.position.set(Math.cos(a) * bg2.userData.r, bg2.userData.h + Math.sin(t * 0.7 + i) * 1.6, Math.sin(a) * bg2.userData.r); bg2.rotation.y = -a; const wl = bg2.getObjectByName('wingL'), wr = bg2.getObjectByName('wingR'); const flap = Math.sin(t * 6 + i * 1.7) * 0.45; if (wl) wl.rotation.z = flap; if (wr) wr.rotation.z = -flap; });
+      birds.forEach((bg2, i) => { bg2.visible = !P.reduced; if (!bg2.visible) return; const a = t * 0.05 + bg2.userData.ph; bg2.position.set(Math.cos(a) * bg2.userData.r, bg2.userData.h + Math.sin(t * 0.7 + i) * 1.6, Math.sin(a) * bg2.userData.r); bg2.rotation.y = -a; const wl = bg2.getObjectByName('wingL'), wr = bg2.getObjectByName('wingR'); const flap = Math.sin(t * 4.8 + i * 1.7) * 0.6; if (wl) wl.rotation.z = flap; if (wr) wr.rotation.z = -flap; });
       // Unified screen-space layout: selected building, its agents, active agents, then other labels.
       const occupiedLabels: { x: number; y: number; hw: number; hh: number }[] = [];
       const labelItems: {
@@ -564,7 +564,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
         const dx = camera.position.x - l.x, dy = camera.position.y - l.y, dz = camera.position.z - l.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const selected = l.slug === P.selectedSlug;
-        const inRange = dist < (cam.radius < 100 ? 135 : 320);
+        const inRange = dist < (cam.radius < 100 ? 135 : 245);
         l.s.visible = selected || inRange;
         if (l.s.visible) labelItems.push({ kind: 'building', sprite: l.s, slug: l.slug, x: l.x, y: l.y, z: l.z, dist, priority: selected ? 0 : 4, buildingEntry: l });
       }
