@@ -15,7 +15,7 @@ Use the user's own router/provider endpoint here when applicable. The server sen
 
 ## Task flow
 
-1. Create a task in City Operations. It is saved with queued status.
+1. Create a task in City Operations with a title and optional task details / acceptance criteria. It is saved with queued status; both title and details are passed to the selected agent.
 2. Open Agents → ECC City Ecosystem → Task Runner.
 3. Enter the owner token in the password field (held in page memory only).
 4. Choose an eligible ECC city staff or hired company agent and run the task.
