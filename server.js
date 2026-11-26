@@ -30,7 +30,7 @@ const handlers = {};
 const handlerFiles = [
   'activity', 'agents', 'agent-run', 'awards', 'bookmarks', 'bootstrap', 'buildings',
   'clients', 'comments', 'companies', 'connected', 'dispatch', 'eccimport', 'lifecycle', 'members',
-  'messages', 'notifications', 'outputs', 'posts', 'profiles', 'resources',
+  'messages', 'notifications', 'outputs', 'oauth', 'posts', 'profiles', 'resources',
   'reviews', 'scheduled', 'tasks', 'treasury',
 ];
 
@@ -93,9 +93,10 @@ const server = createServer(async (req, res) => {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) body = await parseJsonBody(req);
 
   // Support hyphenated API handler names such as /api/agent-run.
+  const oauthCallback = pathname.match(/^\/api\/oauth\/(meta|youtube)\/callback$/);
   const match = pathname.match(/^\/api\/(?!health$)([\w-]+)$/);
-  if (match) {
-    const handlerName = match[1];
+  if (match || oauthCallback) {
+    const handlerName = oauthCallback ? 'oauth' : match[1];
     const handler = handlers[handlerName];
     if (handler) {
       const mockReq = {
