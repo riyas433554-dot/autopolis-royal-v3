@@ -75,7 +75,7 @@ export default function CityHome() {
 
       {/* Help hint */}
       {showHelp && !sel && (
-        <div className="absolute bottom-[92px] left-1/2 flex w-[calc(100vw-24px)] max-w-md -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#0b0a18]/85 px-4 py-2.5 text-[11px] text-slate-200 backdrop-blur-md sm:bottom-[104px]">
+        <div className="absolute bottom-[220px] left-1/2 flex w-[calc(100vw-24px)] max-w-md -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#0b0a18]/85 px-4 py-2.5 text-[11px] text-slate-200 backdrop-blur-md sm:bottom-[104px]">
           <MousePointer2 size={14} className="shrink-0 text-amber-400" />
           <span><b>Drag</b> to orbit · <b>pinch / scroll</b> to zoom · <b>tap a building</b> to select & enter</span>
           <button onClick={() => setShowHelp(false)} className="ml-auto shrink-0 text-slate-400" aria-label="Dismiss help"><X size={14} /></button>
@@ -109,7 +109,7 @@ export default function CityHome() {
       {/* Selected building sheet */}
       <AnimatePresence>
         {sel && (
-          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} className="absolute bottom-14 left-3 right-3 sm:bottom-16 sm:left-auto sm:right-4 sm:w-[380px]">
+          <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }} className="absolute bottom-14 left-3 right-3 max-h-[48dvh] overflow-y-auto overscroll-contain [scrollbar-width:none] sm:bottom-16 sm:left-auto sm:right-4 sm:w-[380px] sm:max-h-[72dvh]">
             <div className="rounded-3xl border border-amber-500/30 bg-[#0d0b1d]/92 p-4 shadow-2xl backdrop-blur-xl">
               <div className="flex items-start justify-between gap-2">
                 <div>
