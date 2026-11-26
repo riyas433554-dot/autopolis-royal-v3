@@ -60,10 +60,16 @@ export default function AgentTaskRunner() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const eligible = useMemo(() => profiles
-    .filter(profile => ['city_staff', 'company'].includes(profile.lifecycle_status))
-    .map(profile => profile.agent ? { ...profile.agent, company_id: profile.company_id, lifecycle_status: profile.lifecycle_status } : null)
-    .filter((agent): agent is CityAgent => !!agent && !['busy', 'working'].includes(String(agent.status).toLowerCase())), [profiles]);
+  const eligible = useMemo(() => profiles.flatMap(profile => {
+    if (!['city_staff', 'company'].includes(profile.lifecycle_status) || !profile.agent ||
+        ['busy', 'working'].includes(String(profile.agent.status).toLowerCase())) return [];
+    const agent: CityAgent = {
+      ...profile.agent,
+      company_id: profile.company_id ?? null,
+      lifecycle_status: profile.lifecycle_status,
+    };
+    return [agent];
+  }), [profiles]);
 
   const queued = tasks.filter(task => task.status === 'queued');
   const failed = tasks.filter(task => task.status === 'error');
