@@ -7,6 +7,8 @@ type CityAgent = {
   role: string;
   status: string;
   building_slug: string;
+  company_id?: number | null;
+  lifecycle_status?: string;
 };
 type LifecycleProfile = {
   agent_id: number;
@@ -22,6 +24,9 @@ type CityTask = {
   status: string;
   progress: number;
   priority: string;
+  company_id?: number | null;
+  assigned_agent_id?: number | null;
+  deliverable_type?: string;
   error?: string | null;
   result?: string | null;
 };
@@ -56,16 +61,20 @@ export default function AgentTaskRunner() {
 
   const eligible = useMemo(() => profiles
     .filter(profile => ['city_staff', 'company'].includes(profile.lifecycle_status))
-    .map(profile => profile.agent)
+    .map(profile => profile.agent ? { ...profile.agent, company_id: profile.company_id, lifecycle_status: profile.lifecycle_status } : null)
     .filter((agent): agent is CityAgent => !!agent && !['busy', 'working'].includes(String(agent.status).toLowerCase())), [profiles]);
 
   const queued = tasks.filter(task => task.status === 'queued');
   const failed = tasks.filter(task => task.status === 'error');
 
   const assignedAgent = (task: CityTask) => {
-    const selectedId = Number(choice[task.id] || 0);
-    if (selectedId) return eligible.find(agent => agent.id === selectedId);
-    return eligible.find(agent => agent.building_slug === task.building_slug) || eligible[0];
+    const available = task.company_id
+      ? eligible.filter(agent => agent.lifecycle_status === 'company' && Number(agent.company_id) === Number(task.company_id))
+      : eligible;
+    const selectedId = Number(choice[task.id] || task.assigned_agent_id || 0);
+    if (selectedId) return available.find(agent => agent.id === selectedId);
+    if (task.assigned_agent_id) return undefined;
+    return available.find(agent => agent.building_slug === task.building_slug) || available[0];
   };
 
   const runTask = async (task: CityTask) => {
@@ -126,10 +135,10 @@ export default function AgentTaskRunner() {
         {queued.map(task => {
           const agent = assignedAgent(task);
           return <article key={task.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">#{task.id} · {task.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{task.building_slug} · {task.priority}</p></div><button onClick={() => void runTask(task)} disabled={busy !== null || eligible.length === 0} className="rounded-full bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{busy === task.id ? 'RUNNING…' : 'RUN TASK'}</button></div>
+            <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">#{task.id} · {task.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{task.building_slug} · {task.priority}{task.company_id ? ' · company #' + task.company_id : ''} · {task.deliverable_type || 'report'}</p></div><button onClick={() => void runTask(task)} disabled={busy !== null || eligible.length === 0} className="rounded-full bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{busy === task.id ? 'RUNNING…' : 'RUN TASK'}</button></div>
             <select value={String(agent?.id || '')} onChange={e => setChoice(prev => ({ ...prev, [task.id]: e.target.value }))} className="mt-2 w-full rounded-xl border border-white/10 bg-[#151228] px-3 py-2 text-xs text-white">
               <option value="">Choose ECC agent…</option>
-              {eligible.map(option => <option key={option.id} value={option.id}>{option.name} — {option.role} · {option.building_slug}</option>)}
+              {(task.company_id ? eligible.filter(option => option.lifecycle_status === 'company' && Number(option.company_id) === Number(task.company_id)) : eligible).map(option => <option key={option.id} value={option.id}>{option.name} — {option.role} · {option.building_slug}</option>)}
             </select>
           </article>;
         })}
