@@ -58,6 +58,7 @@ begin
 
   update agent_lifecycle_profiles set
     lifecycle_status = 'training', training_track = v_track,
+    assigned_building_slug = 'agent-academy', assignment_duty = 'academy_training',
     mistakes_this_cycle = 0, updated_at = now()
   where id = v_profile.id;
 
@@ -181,7 +182,8 @@ begin
     update agent_lifecycle_profiles set
       lifecycle_status = 'academy', training_level = v_new_level,
       training_track = 'strict_level_' || v_new_level::text,
-      company_id = null, current_score = p_score,
+      company_id = null, assigned_building_slug = 'agent-academy',
+      assignment_duty = 'academy_training', current_score = p_score,
       mistakes_this_cycle = v_new_mistakes,
       lifetime_mistakes = lifetime_mistakes + p_mistakes,
       last_evaluated_at = now(), updated_at = now()
