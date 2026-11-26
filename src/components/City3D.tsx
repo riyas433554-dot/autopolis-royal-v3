@@ -434,7 +434,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
     for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), lantMat); s.position.set(84 + Math.random() * 16, 3 + Math.random() * 5, -80 + Math.random() * 160); s.userData.phase = Math.random() * 6.28; scene.add(s); lanterns.push(s); }
     const birds: THREE.Group[] = [];
     const birdMat = new THREE.MeshBasicMaterial({ color: 0x1a2030 });
-    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 0.42), birdMat); w1.position.x = -1.05; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 1.05; w2.name = 'wingR'; bg2.add(w1, w2); bg2.scale.setScalar(1.45); bg2.userData.r = 48 + i * 7; bg2.userData.h = 48 + (i % 3) * 6; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
+    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 0.42), birdMat); w1.position.x = -1.05; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 1.05; w2.name = 'wingR'; bg2.add(w1, w2); bg2.scale.setScalar(1.9); bg2.userData.r = 36 + i * 6; bg2.userData.h = 42 + (i % 3) * 5; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
 
     // Camera orbit state (starts wide → eased intro fly-over into the default view)
     const cam = { theta: 0.12, phi: 0.6, radius: 268, tx: 0, tz: 0, dTheta: 0.7, dPhi: 0.92, dRadius: 178, dTx: 0, dTz: 0 };
@@ -564,7 +564,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
         const dx = camera.position.x - l.x, dy = camera.position.y - l.y, dz = camera.position.z - l.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const selected = l.slug === P.selectedSlug;
-        const inRange = dist < (cam.radius < 100 ? 135 : 245);
+        const inRange = dist < (cam.radius < 100 ? 135 : 185);
         l.s.visible = selected || inRange;
         if (l.s.visible) labelItems.push({ kind: 'building', sprite: l.s, slug: l.slug, x: l.x, y: l.y, z: l.z, dist, priority: selected ? 0 : 4, buildingEntry: l });
       }
