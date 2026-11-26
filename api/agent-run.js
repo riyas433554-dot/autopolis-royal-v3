@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import supabase from './db-client.js';
 import { buildCompanyOutput } from './company-output.js';
+import { getLlmConfig, callChatCompletion, responseText } from './llm-runtime.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const MAX_OUTPUT_CHARS = 50000;
@@ -39,13 +40,6 @@ async function getEccInstructions(sourceAgentKey) {
   return instructions;
 }
 
-function responseText(payload) {
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content.trim();
-  if (Array.isArray(content)) return content.map(part => typeof part?.text === 'string' ? part.text : '').join('').trim();
-  return '';
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -54,15 +48,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
 
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  const apiKey = process.env.AUTOPOLIS_LLM_API_KEY || nvidiaKey;
-  const model = process.env.AUTOPOLIS_LLM_MODEL ||
-    (nvidiaKey ? 'nvidia/nemotron-3.5-super-vl-120b-a12b' : '');
-  const endpoint = process.env.AUTOPOLIS_LLM_BASE_URL ||
-    (nvidiaKey ? 'https://integrate.api.nvidia.com/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions');
-  const configuredMaxTokens = Number(process.env.AUTOPOLIS_LLM_MAX_TOKENS || 8000);
-  const maxTokens = Number.isInteger(configuredMaxTokens) && configuredMaxTokens >= 1024 && configuredMaxTokens <= 16000
-    ? configuredMaxTokens : 8000;
+  const llmConfig = getLlmConfig();
+  const { apiKey, model, endpoint, maxTokens } = llmConfig;
   if (!apiKey || !model) {
     return res.status(503).json({
       error: 'Agent runtime is not configured. Set AUTOPOLIS_LLM_API_KEY and AUTOPOLIS_LLM_MODEL on the server.'
@@ -176,26 +163,10 @@ export default async function handler(req, res) {
       '- Respect safety, privacy, copyright, and task scope. Use original or licensed creative material; state assumptions and blockers.\n' +
       '- Return the deliverable directly, with concise completion notes.';
 
-    const llmResponse = await fetch(endpointUrl, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: 'City task: ' + task.title + '\nTask details / acceptance criteria: ' + (task.description || 'Not provided') + '\nBuilding: ' + (task.building_slug || 'operations-tower') + '\nPriority: ' + (task.priority || 'medium') },
-        ],
-        temperature: 0.2,
-        max_tokens: maxTokens,
-      }),
-      signal: AbortSignal.timeout(90000),
-    });
-    const responsePayload = await llmResponse.json().catch(() => null);
-    if (!llmResponse.ok) {
-      const providerMessage = responsePayload?.error?.message || 'LLM provider returned HTTP ' + llmResponse.status;
-      throw new Error(String(providerMessage).slice(0, 500));
-    }
-
+    const responsePayload = await callChatCompletion(llmConfig, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'City task: ' + task.title + '\nTask details / acceptance criteria: ' + (task.description || 'Not provided') + '\nBuilding: ' + (task.building_slug || 'operations-tower') + '\nPriority: ' + (task.priority || 'medium') },
+    ], maxTokens, { reasoningEffort: 'high' });
     const output = responseText(responsePayload);
     if (!output) throw new Error('LLM response contained no assistant text');
     const result = output.slice(0, MAX_OUTPUT_CHARS);
