@@ -158,10 +158,21 @@ export default async function handler(req, res) {
       agentId = Number(nextProfile.agent_id);
     }
     if (!agentId) return res.status(400).json({ error: 'Valid agent_id required, or action=train_next' });
+    const hireCompanyId = positiveInteger(body.company_id);
+    if (body.action === 'train_next' && body.company_id !== undefined && !hireCompanyId) {
+      return res.status(400).json({ error: 'company_id must be a valid company id' });
+    }
 
     if (body.action === 'run_training' || body.action === 'train_next') {
       try {
         const result = await runAiTraining(agentId, typeof body.track === 'string' ? body.track : null);
+        if (body.action === 'train_next' && hireCompanyId && result.completion?.passed) {
+          const { data: hiring, error: hiringError } = await supabase.rpc('hire_lifecycle_agent', {
+            p_agent_id: agentId, p_company_id: hireCompanyId,
+          });
+          if (hiringError) result.hire_error = String(hiringError.message || hiringError).slice(0, 300);
+          else result.hiring = hiring;
+        }
         return res.status(200).json(result);
       } catch (trainingError) {
         const statusCode = Number(trainingError?.statusCode) || 502;
