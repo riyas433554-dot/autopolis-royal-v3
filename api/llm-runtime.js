@@ -61,12 +61,13 @@ export async function callChatCompletion(config, messages, maxTokens, options = 
     const requestId = response.headers.get('NVCF-REQID') || payload?.requestId || payload?.request_id;
     if (!requestId || String(requestId).length > 64) throw new Error('NVIDIA returned pending status without a valid request id');
     const statusUrl = new URL('/v1/status/' + encodeURIComponent(String(requestId)), endpoint.origin);
+    const pollDeadline = Date.now() + 60000;
     let fulfilled = false;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    for (let attempt = 0; attempt < 40 && Date.now() < pollDeadline; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(1500, Math.max(0, pollDeadline - Date.now()))));
       response = await fetch(statusUrl, {
         headers: { Authorization: 'Bearer ' + config.apiKey, Accept: 'application/json', 'NVCF-POLL-SECONDS': '10' },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(Math.min(10000, Math.max(1000, pollDeadline - Date.now()))),
       });
       payload = await readJson(response);
       if (response.status === 202) continue;
