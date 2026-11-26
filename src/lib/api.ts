@@ -1,5 +1,5 @@
 export async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts?.headers || {}) } });
   const ct = res.headers.get('content-type') || '';
   if (!ct.includes('application/json')) throw new Error('City API unavailable (unexpected response). The database may be waking up — please retry.');
   const data = await res.json().catch(() => ({}));
