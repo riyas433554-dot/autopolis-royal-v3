@@ -115,6 +115,7 @@ export function LibraryPage() {
   const [outputs, setOutputs] = useState<Output[]>([]); const [reviews, setReviews] = useState<Review[]>([]); const [companies, setCompanies] = useState<Company[]>([]); const [members, setMembers] = useState<Member[]>([]); const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true); const [err, setErr] = useState(''); const [note, setNote] = useState('');
   const [form, setForm] = useState({ title: '', type: 'report', company_id: '', agent_name: '', tokens_used: 2500 });
+  const [ownerToken, setOwnerToken] = useState(''); const [contentById, setContentById] = useState<Record<number, string>>({}); const [contentErrors, setContentErrors] = useState<Record<number, string>>({}); const [contentBusy, setContentBusy] = useState<Record<number, boolean>>({});
   const [liked, setLiked] = useState<number[]>(() => JSON.parse(localStorage.getItem('ar-out-liked') || '[]'));
   const [openId, setOpenId] = useState<number | null>(null); const [stars, setStars] = useState(5); const [comment, setComment] = useState('');
   const [filter, setFilter] = useState('All');
@@ -130,9 +131,38 @@ export function LibraryPage() {
   const delResource = async (r: Resource) => { try { await api('/api/resources', { method: 'DELETE', body: JSON.stringify({ id: r.id }) }); load(); } catch (e2: any) { setNote('⚠ ' + e2.message); } };
   const shownRes = resources.filter(r => (r.title + r.type + r.tags).toLowerCase().includes(resQ.toLowerCase()));
   const deliver = async (e: React.FormEvent) => { e.preventDefault(); if (!form.title.trim() || !form.company_id) { setNote('Title and company are required.'); return; } try { await api('/api/outputs', { method: 'POST', body: JSON.stringify({ ...form, company_id: Number(form.company_id), building_slug: selCompany?.building_slug }) }); setNote('Output delivered to the Resource Library (Grand Library). Tokens deducted from today’s budget. Now get it reviewed ★'); setForm({ title: '', type: 'report', company_id: '', agent_name: '', tokens_used: 2500 }); load(); } catch (e2: any) { setNote('⚠ ' + e2.message); } };
-  const view = async (o: Output) => { setOpenId(openId === o.id ? null : o.id); if (openId !== o.id) { try { await api('/api/outputs', { method: 'PUT', body: JSON.stringify({ id: o.id, action: 'view' }) }); setOutputs(prev => prev.map(x => x.id === o.id ? { ...x, views: x.views + 1 } : x)); } catch { /* noop */ } } };
+  const loadOutputContent = async (o: Output) => {
+    setContentBusy(prev => ({ ...prev, [o.id]: true }));
+    setContentErrors(prev => ({ ...prev, [o.id]: '' }));
+    try {
+      const result = await api<Output>('/api/outputs?id=' + o.id + '&include_content=1', {
+        headers: ownerToken.trim() ? { Authorization: 'Bearer ' + ownerToken.trim() } : {},
+      });
+      setContentById(prev => ({ ...prev, [o.id]: result.content || '' }));
+    } catch (e: any) {
+      setContentErrors(prev => ({ ...prev, [o.id]: e.message || 'Could not load deliverable content.' }));
+    } finally {
+      setContentBusy(prev => ({ ...prev, [o.id]: false }));
+    }
+  };
+  const view = async (o: Output) => {
+    const opening = openId !== o.id;
+    setOpenId(opening ? o.id : null);
+    if (opening) {
+      if (contentById[o.id] === undefined) void loadOutputContent(o);
+      try { await api('/api/outputs', { method: 'PUT', body: JSON.stringify({ id: o.id, action: 'view' }) }); setOutputs(prev => prev.map(x => x.id === o.id ? { ...x, views: x.views + 1 } : x)); } catch { /* noop */ }
+    }
+  };
+  const submitDraftForReview = async (o: Output) => {
+    if (!ownerToken.trim()) { setNote('Owner token required to submit a draft to the public Library.'); return; }
+    try {
+      await api('/api/outputs', { method: 'PUT', headers: { Authorization: 'Bearer ' + ownerToken.trim() }, body: JSON.stringify({ id: o.id, action: 'submit_for_review' }) });
+      setNote('Owner approved the draft for public Library review. Citizens can now view and rate it.');
+      setOutputs(prev => prev.map(x => x.id === o.id ? { ...x, status: 'in_library' } : x));
+    } catch (e: any) { setNote('⚠ ' + e.message); }
+  };
   const like = async (o: Output) => { const has = liked.includes(o.id); setLiked(has ? liked.filter(i => i !== o.id) : [...liked, o.id]); try { await api('/api/outputs', { method: 'PUT', body: JSON.stringify({ id: o.id, action: has ? 'unlike' : 'like' }) }); load(); } catch { /* noop */ } };
-  const review = async (o: Output) => { try { await api('/api/reviews', { method: 'POST', body: JSON.stringify({ output_id: o.id, reviewer_name: myName, stars, comment }) }); setComment(''); setNote(`Review saved: ${stars}★ for “${o.title}”. Reviewed outputs become eligible for Awards & Publishing.`); load(); } catch (e: any) { setNote('⚠ ' + e.message); } };
+  const review = async (o: Output) => { if (o.status === 'draft') { setNote('Draft is private. Owner must submit it to the Library before citizens can review.'); return; } try { await api('/api/reviews', { method: 'POST', body: JSON.stringify({ output_id: o.id, reviewer_name: myName, stars, comment }) }); setComment(''); setNote(`Review saved: ${stars}★ for “${o.title}”. Reviewed outputs become eligible for Awards & Publishing.`); load(); } catch (e: any) { setNote('⚠ ' + e.message); } };
   const shown = outputs.filter(o => filter === 'All' || o.status === filter);
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -164,6 +194,7 @@ export function LibraryPage() {
         <button className="mt-3 rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 px-5 py-2.5 text-xs font-black text-slate-950">DELIVER TO LIBRARY</button>
         <span className="ml-2 text-[11px] text-slate-500">Agents “visit” the Grand Library to deliver — visits are simulated & logged in Operations activity.</span>
       </form>
+      <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.02] p-3"><label className="block text-xs font-bold text-slate-300">Owner token · view and approve private company drafts<input type="password" value={ownerToken} onChange={e => { setOwnerToken(e.target.value); if (!e.target.value) { setContentById({}); setContentErrors({}); } }} autoComplete="off" placeholder="Paste owner lifecycle token (not stored)" className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" /></label><p className="mt-1.5 text-[10px] text-slate-500">Draft deliverable content is stored privately. It becomes public only after owner submits it to the Library.</p></div>
       <div className="mb-3 flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{['All', 'in_library', 'reviewed', 'published'].map(f => <button key={f} onClick={() => setFilter(f)} className={`shrink-0 rounded-full px-3.5 py-2 text-[11px] font-bold ${filter === f ? 'bg-amber-400 text-slate-950' : 'bg-white/5 text-slate-200'}`}>{f === 'in_library' ? 'On shelf' : f}</button>)}</div>
       {loading ? <Spinner label="Opening the Resource Library…" /> : err ? (isSetupError(err) ? <SetupRequired onRetry={load} /> : <ErrorBox message={err} onRetry={load} />) : shown.length === 0 ? <Empty>No outputs on this shelf yet. Deliver the first one above.</Empty> : (
         <div className="grid gap-3.5 md:grid-cols-2">{shown.map((o, i) => { const avg = avgStars(reviews, o.id); const rc = reviews.filter(r => r.output_id === o.id).length; return (
@@ -172,11 +203,12 @@ export function LibraryPage() {
             <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-300"><span className="flex items-center gap-1.5"><Stars value={avg} />{avg ? avg.toFixed(1) + '★' : 'no reviews'} ({rc})</span><span className="flex items-center gap-1"><Eye size={12} />{fmt(o.views)}</span><span className="flex items-center gap-1"><Heart size={12} className="text-pink-400" />{fmt(o.likes)}</span><span className="flex items-center gap-1"><Zap size={12} className="text-amber-400" />{fmt(o.tokens_used)} tok</span>{o.status === 'published' && <span className="flex items-center gap-1 font-bold text-emerald-300"><Coins size={12} />earned {fmt(o.earning_coins)}</span>}</div>
             <div className="mt-3 flex gap-1.5"><button onClick={() => view(o)} className="flex items-center gap-1 rounded-full bg-white/5 px-3.5 py-2 text-[11px] font-bold text-white hover:bg-white/10"><Eye size={12} /> {openId === o.id ? 'Close' : 'View & review'}</button><button onClick={() => like(o)} className={`flex items-center gap-1 rounded-full px-3.5 py-2 text-[11px] font-bold ${liked.includes(o.id) ? 'bg-pink-500/20 text-pink-300' : 'bg-white/5 text-slate-200 hover:bg-white/10'}`}><Heart size={12} fill={liked.includes(o.id) ? 'currentColor' : 'none'} /> Like</button>{o.status !== 'published' && <Link to="/publishing" className="ml-auto rounded-full bg-amber-400/15 px-3.5 py-2 text-[11px] font-bold text-amber-200">Publish →</Link>}</div>
             {openId === o.id && (<div className="mt-3 rounded-2xl bg-black/25 p-3">
-              {o.content && <details open className="mb-3 rounded-xl border border-emerald-400/15 bg-emerald-500/5 p-3"><summary className="cursor-pointer text-xs font-bold text-emerald-200">Company deliverable · {o.content.length.toLocaleString()} characters</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">{o.content}</pre></details>}
+              {contentBusy[o.id] ? <p className="text-xs text-slate-400">Loading deliverable…</p> : contentById[o.id] !== undefined ? <details open className="mb-3 rounded-xl border border-emerald-400/15 bg-emerald-500/5 p-3"><summary className="cursor-pointer text-xs font-bold text-emerald-200">Deliverable · {contentById[o.id].length.toLocaleString()} characters</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">{contentById[o.id]}</pre></details> : <p className="mb-3 text-xs text-amber-200">{contentErrors[o.id] || (o.status === 'draft' ? 'Private draft. Enter owner token to view and approve it.' : 'Deliverable content not available.')}</p>}
+              {o.status === 'draft' && contentById[o.id] && <button onClick={() => void submitDraftForReview(o)} className="mb-3 rounded-full bg-emerald-400 px-4 py-2 text-[11px] font-black text-slate-950">OWNER APPROVE → SUBMIT TO LIBRARY</button>}
               <p className="text-[11px] font-black tracking-widest text-slate-300">REVIEWS ({rc})</p>
               {rc === 0 ? <p className="mt-1 text-xs text-slate-500">No reviews yet — be the first to rate this work.</p> : reviews.filter(r => r.output_id === o.id).map(r => (<div key={r.id} className="mt-2 border-l-2 border-amber-500/30 pl-2.5"><p className="flex items-center gap-2 text-xs text-slate-200"><b>{r.reviewer_name}</b><Stars value={r.stars} size={11} /><span className="text-[10px] text-slate-500">{timeAgo(r.created_at)}</span></p>{r.comment && <p className="text-xs text-slate-400">{r.comment}</p>}</div>))}
-              <div className="mt-3 flex items-center gap-1">{[1, 2, 3, 4, 5].map(s => <button key={s} onClick={() => setStars(s)} aria-label={s + ' stars'}><Star size={22} className={s <= stars ? 'text-amber-400' : 'text-slate-600'} fill={s <= stars ? 'currentColor' : 'none'} /></button>)}<span className="ml-1 text-xs font-bold text-amber-200">{stars}★ as {myName}</span></div>
-              <div className="mt-2 flex gap-2"><input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a review comment…" className="flex-1 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" /><button onClick={() => review(o)} className="rounded-full bg-amber-400 px-4 text-xs font-black text-slate-950">Review ★</button></div>
+              {o.status === 'draft' ? <p className="mt-2 text-xs text-slate-500">Owner must submit this draft before public reviews.</p> : <><div className="mt-3 flex items-center gap-1">{[1, 2, 3, 4, 5].map(s => <button key={s} onClick={() => setStars(s)} aria-label={s + ' stars'}><Star size={22} className={s <= stars ? 'text-amber-400' : 'text-slate-600'} fill={s <= stars ? 'currentColor' : 'none'} /></button>)}<span className="ml-1 text-xs font-bold text-amber-200">{stars}★ as {myName}</span></div>
+              <div className="mt-2 flex gap-2"><input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a review comment…" className="flex-1 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" /><button onClick={() => review(o)} className="rounded-full bg-amber-400 px-4 text-xs font-black text-slate-950">Review ★</button></div></>}
             </div>)}
           </motion.div>); })}</div>
       )}
