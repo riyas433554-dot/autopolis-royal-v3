@@ -202,14 +202,22 @@ export default async function handler(req, res) {
     let outputRecord = null;
     const companyOutput = buildCompanyOutput({ task, agent: agentRow, profile, result });
     if (companyOutput) {
+      const { content: privateContent, ...outputMetadata } = companyOutput;
+      outputMetadata.content = '';
       const { data: existingOutput, error: existingOutputError } = await supabase
-        .from('outputs').select('id').eq('task_id', taskId).maybeSingle();
+        .from('outputs').select('id,status').eq('task_id', taskId).maybeSingle();
       if (existingOutputError) throw existingOutputError;
+      if (existingOutput?.status === 'published') throw new Error('Published company deliverables cannot be overwritten by a task retry');
       const outputWrite = existingOutput
-        ? await supabase.from('outputs').update(companyOutput).eq('id', existingOutput.id).select('id').single()
-        : await supabase.from('outputs').insert(companyOutput).select('id').single();
+        ? await supabase.from('outputs').update(outputMetadata).eq('id', existingOutput.id).select('id').single()
+        : await supabase.from('outputs').insert(outputMetadata).select('id').single();
       if (outputWrite.error) throw outputWrite.error;
       outputRecord = outputWrite.data;
+      const { error: contentError } = await supabase.rpc('store_company_deliverable', {
+        p_output_id: outputRecord.id,
+        p_content: privateContent,
+      });
+      if (contentError) throw contentError;
     }
     const completedAt = new Date().toISOString();
 
