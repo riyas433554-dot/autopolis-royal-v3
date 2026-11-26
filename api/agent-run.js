@@ -112,8 +112,8 @@ export default async function handler(req, res) {
     if (task.assigned_agent_id && Number(task.assigned_agent_id) !== agentId) {
       return res.status(409).json({ error: 'Task is assigned to a different agent' });
     }
-    if (profile.lifecycle_status === 'company' && task.company_id && Number(task.company_id) !== Number(profile.company_id)) {
-      return res.status(409).json({ error: 'Task belongs to a different company' });
+    if (task.company_id && (profile.lifecycle_status !== 'company' || Number(task.company_id) !== Number(profile.company_id))) {
+      return res.status(409).json({ error: 'Company task must be run by a hired agent from that company' });
     }
     if (profile.lifecycle_status === 'company') {
       const { data: membership, error: memberError } = await supabase
