@@ -62,3 +62,9 @@ These are defaults, not final owner-approved balance settings. Keep them configu
 - Roster import is metadata-only; no upstream hooks/scripts are executed.
 - Do not connect city labels until lifecycle APIs and transition tests are verified.
 - Do not merge/deploy until migration, importer idempotency, state-transition tests and E2E are green.
+
+## Import endpoint (not executed yet)
+
+After the three timestamped migrations are applied and the Render service has the private environment variable `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`, the owner can trigger the metadata-only import with an authenticated POST to `/api/eccimport`. Keep the token private; never paste it into chat or commit it. The endpoint fetches only the pinned `agents/*.md` files, parses their frontmatter, and calls the transactional Supabase RPC. It does not execute ECC scripts/hooks.
+
+The first import is deterministic: manifest order alternates 36 definitions into Academy and 36 into city staff, with city staff round-robin across existing buildings except `agent-academy`. Repeated imports update source metadata and preserve lifecycle status, score, level, mistakes, and assignments. Do not call the endpoint until the migration and secret are configured.
