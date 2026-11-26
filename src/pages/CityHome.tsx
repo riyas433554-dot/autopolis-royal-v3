@@ -40,7 +40,7 @@ export default function CityHome() {
   return (
     <div className="relative h-[calc(100dvh-57px-54px)] w-full overflow-hidden bg-[#070714] lg:h-[calc(100dvh-57px)]">
       {(buildings.length > 0 || loadErr)
-        ? <City3D buildings={buildings} selectedSlug={selected} onSelect={pick} night={night} reduced={reduced} focusSlug={focus} resetSignal={resetSig} />
+        ? <City3D buildings={buildings} agents={agents} selectedSlug={selected} onSelect={pick} night={night} reduced={reduced} focusSlug={focus} resetSignal={resetSig} />
         : <div className="flex h-full flex-col items-center justify-center gap-3 bg-gradient-to-b from-[#0d0b22] to-[#070714]"><span className="animate-pulse text-5xl">👑</span><p className="font-display text-lg font-bold tracking-widest text-amber-200">RAISING AUTOPOLIS ROYAL…</p><p className="text-xs text-slate-400">Loading the city directory (37 buildings)</p></div>}
 
       {/* HUD — title + live stats */}
