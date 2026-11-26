@@ -15,16 +15,46 @@ export default async function handler(req, res) {
       const body = req.body || {};
       const title = typeof body.title === 'string' ? body.title.trim() : '';
       const description = typeof body.description === 'string' ? body.description.trim().slice(0, 12000) : '';
-      const building_slug = typeof body.building_slug === 'string' ? body.building_slug : '';
+      let building_slug = typeof body.building_slug === 'string' ? body.building_slug : '';
       const agent_name = typeof body.agent_name === 'string' ? body.agent_name : '';
-      const priority = typeof body.priority === 'string' ? body.priority : '';
+      const priority = ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : 'medium';
+      const deliverableTypes = ['app', 'website', 'automation', 'game', 'ad', 'video', 'reel', 'anime', 'movie', 'proposal', 'report', 'design', 'code', 'other'];
+      const deliverable_type = deliverableTypes.includes(body.deliverable_type) ? body.deliverable_type : 'report';
+      const company_id = body.company_id === null || body.company_id === undefined || body.company_id === ''
+        ? null : Number(body.company_id);
+      const assigned_agent_id = body.assigned_agent_id === null || body.assigned_agent_id === undefined || body.assigned_agent_id === ''
+        ? null : Number(body.assigned_agent_id);
       if (!title) return res.status(400).json({ error: 'title required' });
+      if (company_id !== null && (!Number.isInteger(company_id) || company_id <= 0)) {
+        return res.status(400).json({ error: 'company_id must be a positive integer' });
+      }
+      if (assigned_agent_id !== null && (!Number.isInteger(assigned_agent_id) || assigned_agent_id <= 0)) {
+        return res.status(400).json({ error: 'assigned_agent_id must be a positive integer' });
+      }
+      if (company_id !== null) {
+        const { data: company, error: companyError } = await supabase
+          .from('companies').select('id,building_slug').eq('id', company_id).maybeSingle();
+        if (companyError) throw companyError;
+        if (!company) return res.status(404).json({ error: 'Company not found' });
+        building_slug = company.building_slug || building_slug;
+      }
+      let assignedAgentName = agent_name || 'Unassigned';
+      if (assigned_agent_id !== null) {
+        const { data: assignedAgent, error: agentError } = await supabase
+          .from('agents').select('id,name').eq('id', assigned_agent_id).maybeSingle();
+        if (agentError) throw agentError;
+        if (!assignedAgent) return res.status(404).json({ error: 'Assigned agent not found' });
+        assignedAgentName = assignedAgent.name || assignedAgentName;
+      }
       const { data, error } = await supabase.from('tasks').insert({
         title,
         description,
         building_slug: building_slug || 'operations-tower',
-        agent_name: agent_name || 'Unassigned',
-        priority: priority || 'medium',
+        agent_name: assignedAgentName,
+        priority,
+        company_id,
+        assigned_agent_id,
+        deliverable_type,
         status: 'queued',
         progress: 0
       }).select().single();
