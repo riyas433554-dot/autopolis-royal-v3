@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { BUILDING_GEO, BUILDING_META, DISTRICT_COLORS } from '../lib/cityConfig';
 import type { Agent, Building } from '../lib/api';
 
+const SHOW_AGENT_MARKERS = false;
+
 interface Props {
   buildings: Building[];
   agents: Agent[];
@@ -500,6 +502,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
       setAgents: (list: Agent[]) => {
         agentSprites.forEach(a => { scene.remove(a.s); scene.remove(a.marker); (a.s.material as THREE.SpriteMaterial).map?.dispose(); (a.s.material as THREE.SpriteMaterial).dispose(); a.marker.traverse(o => { if ((o as THREE.Mesh).isMesh) { (o as THREE.Mesh).geometry.dispose(); const mat = (o as THREE.Mesh).material; if (Array.isArray(mat)) mat.forEach(m => m.dispose()); else mat.dispose(); } }); });
         agentSprites.length = 0;
+        if (!SHOW_AGENT_MARKERS) return;
         const byBuilding = new Map<string, Agent[]>();
         list.forEach(agent => { if (!agent.building_slug) return; const arr = byBuilding.get(agent.building_slug) || []; arr.push(agent); byBuilding.set(agent.building_slug, arr); });
         byBuilding.forEach((members, slug) => {
