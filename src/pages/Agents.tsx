@@ -4,6 +4,7 @@ import { Search, UserPlus } from 'lucide-react';
 import { api, type Agent, type Building } from '../lib/api';
 import { Spinner, ErrorBox, Empty, PageHead, Avatar, StatusDot, Badge } from '../components/ui';
 import AgentModal from '../components/AgentModal';
+import ECCWorkflow from '../components/ECCWorkflow';
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]); const [buildings, setBuildings] = useState<Building[]>([]);
@@ -21,12 +22,13 @@ export default function AgentsPage() {
   const counts = { active: agents.filter(a => a.status === 'active').length, busy: agents.filter(a => a.status === 'busy').length, idle: agents.filter(a => a.status === 'idle').length, error: agents.filter(a => a.status === 'error').length };
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
-      <PageHead title="Agents Directory" sub="People & AI agents of Autopolis Royal. Records and statuses are live from the database; the animated characters in the city are simulations — no autonomous execution runs behind these profiles." badge="sim" />
+      <PageHead title="Agents Directory" sub="Database-backed agent records and lifecycle. City character animation is visual; autonomous model execution is not yet connected." badge="sim" />
+      <ECCWorkflow />
       <div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
         {Object.entries(counts).map(([k, v]) => <div key={k} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-center"><p className="font-display text-xl font-bold text-white sm:text-2xl">{v}</p><p className="flex items-center justify-center gap-1 text-[10px] font-bold tracking-widest text-slate-400"><StatusDot status={k} />{k.toUpperCase()}</p></div>)}
       </div>
       <form onSubmit={addAgent} className="mb-5 rounded-3xl border border-amber-500/20 bg-white/[0.03] p-4">
-        <p className="flex items-center gap-2 text-sm font-bold text-white"><UserPlus size={16} className="text-amber-400" /> Register a new agent <span className="text-xs font-normal text-slate-500">(creates a real database record)</span></p>
+        <p className="flex items-center gap-2 text-sm font-bold text-white"><UserPlus size={16} className="text-amber-400" /> Register a new agent <span className="text-xs font-normal text-slate-500">(creates a database record)</span></p>
         <div className="mt-3 grid gap-2 sm:grid-cols-4">
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Full name *" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" />
           <input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="Role * (e.g. Research Analyst)" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" />
