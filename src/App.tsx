@@ -12,6 +12,7 @@ import OperationsPage from './pages/Operations';
 import SocialPage from './pages/Social';
 import ManagePage from './pages/Manage';
 import { SystemsPage, AnalyticsPage, NotificationsPage, ProfilePage, SettingsPage, LoginPage, ConnectedPage, FacilitiesPage } from './pages/Misc';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicy';
 import { CompaniesPage, DispatchPage, LibraryPage, AwardsPage, PublishingPage, TreasuryPage } from './pages/Economy';
 import ClientsPage from './pages/Clients';
 
@@ -89,6 +90,7 @@ function Shell() {
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/connected" element={<ConnectedPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<div className="mx-auto max-w-xl px-4 py-16 text-center"><p className="text-5xl">🏙️</p><h1 className="font-display mt-3 text-2xl font-bold text-white">This street doesn&apos;t exist (yet)</h1><p className="mt-1 text-sm text-slate-400">The address you requested is not part of Autopolis Royal.</p><Link to="/" className="mt-4 inline-block rounded-full bg-amber-400 px-5 py-2.5 text-sm font-black text-slate-950">Return to the City</Link></div>} />
