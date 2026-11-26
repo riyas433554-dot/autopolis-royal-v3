@@ -147,9 +147,10 @@ export default async function handler(req, res) {
     let agentId = positiveInteger(body.agent_id);
     if (body.action === 'train_next') {
       const { data: nextProfile, error: nextProfileError } = await supabase.from('agent_lifecycle_profiles')
-        .select('agent_id,completed_training_cycles')
+        .select('agent_id,completed_training_cycles,last_evaluated_at')
         .eq('lifecycle_status', 'academy')
         .order('completed_training_cycles', { ascending: true })
+        .order('last_evaluated_at', { ascending: true, nullsFirst: true })
         .order('agent_id', { ascending: true })
         .limit(1)
         .maybeSingle();
