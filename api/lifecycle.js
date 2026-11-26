@@ -183,6 +183,10 @@ export default async function handler(req, res) {
       } catch (trainingError) {
         const statusCode = Number(trainingError?.statusCode) || 502;
         const message = String(trainingError?.message || trainingError).slice(0, 500);
+        const { data: currentProfile } = await supabase.from('agent_lifecycle_profiles').select('lifecycle_status').eq('agent_id', agentId).maybeSingle();
+        if (currentProfile?.lifecycle_status === 'training') {
+          await supabase.from('agents').update({ status: 'idle', current_task: 'AI Academy run failed; retry training' }).eq('id', agentId);
+        }
         console.error('AI Academy training failed:', message);
         return res.status(statusCode).json({ error: message });
       }
