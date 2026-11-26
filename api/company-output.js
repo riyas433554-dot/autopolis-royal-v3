@@ -29,8 +29,9 @@ export function inferDeliverableType(task = {}) {
 }
 
 export function buildCompanyOutput({ task, agent, profile, result }) {
-  if (profile?.lifecycle_status !== 'company' || !Number.isInteger(profile.company_id) || profile.company_id <= 0) {
-    return null;
+  if (profile?.lifecycle_status !== 'company') return null;
+  if (!Number.isInteger(profile.company_id) || profile.company_id <= 0) {
+    throw new Error('Company profile is missing a valid company_id');
   }
   const content = typeof result === 'string' ? result.trim() : '';
   if (!content) throw new Error('Company output must contain non-empty content');
