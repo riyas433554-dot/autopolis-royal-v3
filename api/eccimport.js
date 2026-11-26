@@ -4,13 +4,13 @@ import { readFile } from 'node:fs/promises';
 const ECC_REPO = 'affaan-m/ECC';
 
 function parseFrontmatter(markdown) {
-  const match = markdown.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---/);
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) throw new Error('ECC agent file has no frontmatter');
   const fields = {};
-  for (const line of match[1].split(/\\r?\\n/)) {
-    const m = line.match(/^([a-zA-Z0-9_-]+):\\s*(.*)$/);
+  for (const line of match[1].split(/\r?\n/)) {
+    const m = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
     if (!m) continue;
-    fields[m[1]] = m[2].trim().replace(/^(['"])(.*)\\1$/, '$2');
+    fields[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
   }
   return fields;
 }
