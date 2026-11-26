@@ -26,10 +26,10 @@ function extractAgentFiles(tarball, expectedPaths) {
     const header = tar.subarray(offset, offset + 512);
     if (header.every(byte => byte === 0)) break;
 
-    const name = header.subarray(0, 100).toString('utf8').split('\\0')[0];
-    const prefix = header.subarray(345, 500).toString('utf8').split('\\0')[0];
+    const name = header.subarray(0, 100).toString('utf8').split(String.fromCharCode(0))[0];
+    const prefix = header.subarray(345, 500).toString('utf8').split(String.fromCharCode(0))[0];
     const path = prefix ? `${prefix}/${name}` : name;
-    const sizeText = header.subarray(124, 136).toString('utf8').split('\\0')[0].trim();
+    const sizeText = header.subarray(124, 136).toString('utf8').split(String.fromCharCode(0))[0].trim();
     const size = Number.parseInt(sizeText || '0', 8);
     if (!Number.isFinite(size) || size < 0) throw new Error('Invalid ECC archive entry size');
 
