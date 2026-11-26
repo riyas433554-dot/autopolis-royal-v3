@@ -17,7 +17,7 @@ function runtimeConfig() {
 
 function gitBlobSha(content) {
   const bytes = Buffer.from(content, 'utf8');
-  return createHash('sha1').update('blob ' + bytes.length + '\\0').update(bytes).digest('hex');
+  return createHash('sha1').update('blob ' + bytes.length + '\0').update(bytes).digest('hex');
 }
 
 async function getTrainingInstructions(profile, agent) {
