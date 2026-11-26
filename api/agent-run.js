@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   const { apiKey, model, endpoint, maxTokens } = llmConfig;
   if (!apiKey || !model) {
     return res.status(503).json({
-      error: 'Agent runtime is not configured. Set AUTOPOLIS_LLM_API_KEY and AUTOPOLIS_LLM_MODEL on the server.'
+      error: 'Agent runtime is not configured. Set NVIDIA_API_KEY (Nemotron default) or AUTOPOLIS_LLM_API_KEY plus AUTOPOLIS_LLM_MODEL on the server.'
     });
   }
 
