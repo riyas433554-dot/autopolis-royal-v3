@@ -1,6 +1,7 @@
 import supabase from './db-client.js';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
+import { buildInitialEccRoster } from './ecc-roster.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 
@@ -28,7 +29,7 @@ function extractAgentFiles(tarball, expectedPaths) {
 
     const name = header.subarray(0, 100).toString('utf8').split(String.fromCharCode(0))[0];
     const prefix = header.subarray(345, 500).toString('utf8').split(String.fromCharCode(0))[0];
-    const path = prefix ? `${prefix}/${name}` : name;
+    const path = prefix ? prefix + '/' + name : name;
     const sizeText = header.subarray(124, 136).toString('utf8').split(String.fromCharCode(0))[0].trim();
     const size = Number.parseInt(sizeText || '0', 8);
     if (!Number.isFinite(size) || size < 0) throw new Error('Invalid ECC archive entry size');
@@ -45,7 +46,7 @@ function extractAgentFiles(tarball, expectedPaths) {
   }
 
   if (found.size !== expected.size) {
-    throw new Error(`Pinned ECC archive missing ${expected.size - found.size} expected agent files`);
+    throw new Error('Pinned ECC archive missing ' + (expected.size - found.size) + ' expected agent files');
   }
   return found;
 }
@@ -68,7 +69,7 @@ export default async function handler(req, res) {
   const adminToken = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN;
   if (!adminToken) return res.status(503).json({ error: 'Lifecycle admin token is not configured' });
   const authorization = req.headers?.authorization || '';
-  if (authorization !== `Bearer ${adminToken}`) {
+  if (authorization !== 'Bearer ' + adminToken) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -82,26 +83,23 @@ export default async function handler(req, res) {
     const { data: buildingRows, error: buildingError } = await supabase
       .from('buildings').select('slug').order('slug', { ascending: true });
     if (buildingError) throw buildingError;
-    const cityBuildings = (buildingRows || [])
-      .map(row => row.slug)
-      .filter(slug => slug && slug !== 'agent-academy');
-    if (cityBuildings.length < 37) {
-      return res.status(409).json({ error: `Expected 37 city buildings for one ECC staff member each; found ${cityBuildings.length}` });
-    }
+
+    // Includes agent-academy as one of the 37 seeded buildings. The 35 trainee
+    // definitions are separate; 37 city staff map one-to-one to all 37 buildings.
+    const assignments = buildInitialEccRoster(manifest.agents, buildingRows || []);
 
     const archiveResponse = await fetch(
-      `https://codeload.github.com/${ECC_REPO}/tar.gz/${manifest.source_ref}`,
+      'https://codeload.github.com/' + ECC_REPO + '/tar.gz/' + manifest.source_ref,
       { signal: AbortSignal.timeout(25000) }
     );
-    if (!archiveResponse.ok) throw new Error(`Pinned ECC archive fetch failed (${archiveResponse.status})`);
+    if (!archiveResponse.ok) throw new Error('Pinned ECC archive fetch failed (' + archiveResponse.status + ')');
     const archive = Buffer.from(await archiveResponse.arrayBuffer());
     const sourceFiles = extractAgentFiles(archive, manifest.agents.map(entry => entry.path));
 
-    const payload = manifest.agents.map((entry, index) => {
+    const payload = assignments.map((assignment, index) => {
+      const entry = manifest.agents[index];
       const markdown = sourceFiles.get(entry.path);
       const meta = parseFrontmatter(markdown);
-      const isAcademy = index < 35;
-      const assignedBuilding = isAcademy ? 'agent-academy' : cityBuildings[index - 35];
       return {
         source_agent_key: entry.key,
         source_path: entry.path,
@@ -112,9 +110,9 @@ export default async function handler(req, res) {
         source_description: safeString(meta.description),
         source_tools: safeString(meta.tools),
         source_model: safeString(meta.model),
-        lifecycle_status: isAcademy ? 'academy' : 'city_staff',
-        assigned_building_slug: assignedBuilding,
-        assignment_duty: isAcademy ? 'academy_training' : 'interviews_hiring_and_building_support'
+        lifecycle_status: assignment.lifecycle_status,
+        assigned_building_slug: assignment.assigned_building_slug,
+        assignment_duty: assignment.assignment_duty
       };
     });
 
