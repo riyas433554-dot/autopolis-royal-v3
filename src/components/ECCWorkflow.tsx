@@ -40,6 +40,7 @@ export default function ECCWorkflow() {
   const [scores, setScores] = useState<Record<number, string>>({});
   const [mistakes, setMistakes] = useState<Record<number, string>>({});
   const [companyChoice, setCompanyChoice] = useState<Record<number, string>>({});
+  const [trainCompanyChoice, setTrainCompanyChoice] = useState('');
   const [filter, setFilter] = useState('all');
 
   const load = useCallback(async () => {
@@ -157,10 +158,12 @@ export default function ECCWorkflow() {
       const result = await api('/api/lifecycle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token.trim() },
-        body: JSON.stringify({ action: 'train_next' }),
+        body: JSON.stringify({ action: 'train_next', company_id: Number(trainCompanyChoice || companies.find(company => company.name === 'Vyom Construction')?.id || companies[0]?.id || 0) }),
       });
       if (result?.no_agents) setNotice(result.message || 'Academy queue is empty.');
-      else setNotice('AI Academy run: ' + (result.agent_name || 'agent #' + result.agent_id) + ' scored ' + result.evaluation.score + '/100. ' + (result.completion.passed ? 'Passed; eligible for company hiring.' : 'Did not pass; returned to Academy.') + ' ' + result.evaluation.feedback);
+      else if (result.completion?.passed && result.hiring?.ok) setNotice('AI Academy: ' + result.agent_name + ' scored ' + result.evaluation.score + '/100 and was hired by ' + (companies.find(company => company.id === Number(trainCompanyChoice || companies.find(item => item.name === 'Vyom Construction')?.id || companies[0]?.id))?.name || 'selected company') + '. ' + result.evaluation.feedback);
+      else if (result.completion?.passed) setNotice('AI Academy: ' + result.agent_name + ' scored ' + result.evaluation.score + '/100 and passed. Hire remains pending: ' + (result.hire_error || 'choose a company on the profile card') + '.');
+      else setNotice('AI Academy: ' + (result.agent_name || 'agent #' + result.agent_id) + ' scored ' + result.evaluation.score + '/100 and returned to Academy. ' + result.evaluation.feedback);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Next Academy training failed');
@@ -205,8 +208,9 @@ export default function ECCWorkflow() {
       </label>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button onClick={() => void importEcc()} disabled={!!busyKey} className="rounded-full bg-cyan-300 px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">{busyKey === 'ecc-import' ? 'IMPORTING 72 ECC DEFINITIONS…' : 'IMPORT / SYNC ECC 72'}</button>
-        <button onClick={() => void trainNext()} disabled={!!busyKey || !token.trim()} className="rounded-full bg-amber-400 px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">{busyKey === 'train-next' ? 'TRAINING NEXT AGENT…' : 'TRAIN NEXT ACADEMY AGENT'}</button>
-        <span className="text-[10px] text-slate-500">Training runs one agent at a time, evaluates the work sample, then moves passed agents to company hiring.</span>
+        <label className="text-[10px] font-bold text-slate-400">Auto-hire passed agent to<select value={trainCompanyChoice || String(companies.find(company => company.name === 'Vyom Construction')?.id || companies[0]?.id || '')} onChange={e => setTrainCompanyChoice(e.target.value)} className="mt-1 rounded-xl border border-white/10 bg-[#151228] px-3 py-2 text-xs text-white">{companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+        <button onClick={() => void trainNext()} disabled={!!busyKey || !token.trim() || companies.length === 0} className="rounded-full bg-amber-400 px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">{busyKey === 'train-next' ? 'TRAINING & HIRING…' : 'TRAIN NEXT → AUTO-HIRE'}</button>
+        <span className="text-[10px] text-slate-500">One Academy agent at a time. Score ≥80 and fewer than 10 mistakes passes; passing agent is hired to the selected company (2-agent company cap enforced).</span>
       </div>
     </div>
 
