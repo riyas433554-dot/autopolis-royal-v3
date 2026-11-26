@@ -85,7 +85,9 @@ export default async function handler(req, res) {
     const cityBuildings = (buildingRows || [])
       .map(row => row.slug)
       .filter(slug => slug && slug !== 'agent-academy');
-    if (!cityBuildings.length) return res.status(409).json({ error: 'No city buildings available for ECC placement' });
+    if (cityBuildings.length < 37) {
+      return res.status(409).json({ error: `Expected 37 city buildings for one ECC staff member each; found ${cityBuildings.length}` });
+    }
 
     const archiveResponse = await fetch(
       `https://codeload.github.com/${ECC_REPO}/tar.gz/${manifest.source_ref}`,
@@ -98,8 +100,8 @@ export default async function handler(req, res) {
     const payload = manifest.agents.map((entry, index) => {
       const markdown = sourceFiles.get(entry.path);
       const meta = parseFrontmatter(markdown);
-      const isAcademy = index % 2 === 0;
-      const assignedBuilding = isAcademy ? 'agent-academy' : cityBuildings[Math.floor(index / 2) % cityBuildings.length];
+      const isAcademy = index < 35;
+      const assignedBuilding = isAcademy ? 'agent-academy' : cityBuildings[index - 35];
       return {
         source_agent_key: entry.key,
         source_path: entry.path,
