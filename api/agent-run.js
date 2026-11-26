@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import supabase from './db-client.js';
 import { buildCompanyOutput } from './company-output.js';
@@ -164,10 +164,13 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
+    const leaseToken = randomUUID();
+    const busyMarker = 'Running task #' + taskId + ' · lease ' + leaseToken.slice(0, 8) + ': ' + task.title;
     const { data: claim, error: claimError } = await supabase.rpc('claim_agent_task', {
       p_task_id: taskId,
       p_agent_id: agentId,
       p_agent_name: agentRow.name,
+      p_lease_token: leaseToken,
       p_now: now,
     });
     if (claimError) throw claimError;
@@ -186,7 +189,7 @@ export default async function handler(req, res) {
       started_at: now,
     }).select('id').single();
     if (runError) {
-      await supabase.rpc('release_agent_task', { p_task_id: taskId, p_agent_id: agentId, p_error: 'Agent run ledger unavailable' });
+      await supabase.rpc('release_agent_task', { p_task_id: taskId, p_agent_id: agentId, p_lease_token: leaseToken, p_error: 'Agent run ledger unavailable' });
       claimedTask = null;
       throw runError;
     }
@@ -231,6 +234,12 @@ export default async function handler(req, res) {
       const responsePayload = await callChatCompletion(llmConfig, messages, maxTokens, {
         reasoningEffort: 'high', tools, toolChoice: 'auto', parallelToolCalls: false,
       });
+      const { data: leaseAlive, error: heartbeatError } = await supabase.rpc('heartbeat_agent_task', {
+        p_task_id: taskId, p_agent_id: agentId, p_lease_token: leaseToken,
+        p_progress: 20 + round * 8, p_now: new Date().toISOString(),
+      });
+      if (heartbeatError) throw heartbeatError;
+      if (leaseAlive !== true) throw new Error('Agent task lease was lost during model execution');
       const message = responsePayload?.choices?.[0]?.message;
       const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
       if (toolCalls.length) {
@@ -249,6 +258,12 @@ export default async function handler(req, res) {
             }
           }
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(toolResult).slice(0, 12000) });
+          const { data: toolLeaseAlive, error: toolHeartbeatError } = await supabase.rpc('heartbeat_agent_task', {
+            p_task_id: taskId, p_agent_id: agentId, p_lease_token: leaseToken,
+            p_progress: 25 + round * 8, p_now: new Date().toISOString(),
+          });
+          if (toolHeartbeatError) throw toolHeartbeatError;
+          if (toolLeaseAlive !== true) throw new Error('Agent task lease was lost during tool execution');
         }
         continue;
       }
@@ -290,7 +305,7 @@ export default async function handler(req, res) {
     }
     const completedAt = new Date().toISOString();
 
-    const { error: taskUpdateError } = await supabase.from('tasks').update({
+    const { data: taskUpdateData, error: taskUpdateError } = await supabase.from('tasks').update({
       status: 'done',
       progress: 100,
       result,
@@ -298,8 +313,10 @@ export default async function handler(req, res) {
       completed_at: completedAt,
       claimed_agent_id: null,
       lease_expires_at: null,
-    }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId);
+      lease_token: null,
+    }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId).eq('lease_token', leaseToken).select('id').maybeSingle();
     if (taskUpdateError) throw taskUpdateError;
+    if (!taskUpdateData) throw new Error('Agent task lease was lost before completion');
 
     await supabase.from('agent_runs').update({
       status: 'succeeded',
@@ -309,7 +326,7 @@ export default async function handler(req, res) {
     await supabase.from('agents').update({
       status: 'idle',
       current_task: 'Completed task #' + taskId,
-    }).eq('id', agentId);
+    }).eq('id', agentId).eq('status', 'busy').eq('current_task', busyMarker);
     await supabase.from('activity').insert({
       type: 'task',
       title: 'ECC agent completed task #' + taskId,
@@ -330,7 +347,8 @@ export default async function handler(req, res) {
         completed_at: completedAt,
         claimed_agent_id: null,
         lease_expires_at: null,
-      }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId);
+        lease_token: null,
+      }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId).eq('lease_token', leaseToken);
     }
     if (runId) {
       await supabase.from('agent_runs').update({
@@ -343,7 +361,7 @@ export default async function handler(req, res) {
       await supabase.from('agents').update({
         status: 'error',
         current_task: 'Task #' + taskId + ' failed: ' + message.slice(0, 180),
-      }).eq('id', agent.id);
+      }).eq('id', agent.id).eq('status', 'busy').eq('current_task', busyMarker);
     }
     console.error('Autopolis agent run failed:', message);
     return res.status(502).json({ error: 'Agent run failed; inspect the task error after refresh', task_id: taskId });
