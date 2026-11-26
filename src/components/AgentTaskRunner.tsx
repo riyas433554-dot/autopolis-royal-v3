@@ -91,8 +91,9 @@ export default function AgentTaskRunner() {
       if (result?.result) setMessage(String(result.result).slice(0, 900));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Agent execution failed');
+      const failure = err instanceof Error ? err.message : 'Agent execution failed';
       await load();
+      setError(failure);
     } finally {
       setBusy(null);
     }
