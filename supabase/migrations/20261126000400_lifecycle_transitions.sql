@@ -30,18 +30,31 @@ begin
     raise exception 'Agent must be in Academy to start training';
   end if;
 
-  select coalesce(max(cycle_number), 0) + 1 into v_cycle_number
-    from agent_training_cycles where agent_id = p_agent_id;
-  v_track := coalesce(nullif(p_track, ''),
-    case when v_profile.training_level = 0 then 'foundation'
-      else 'strict_level_' || v_profile.training_level::text end);
+  select id, cycle_number, track into v_cycle_id, v_cycle_number, v_track
+    from agent_training_cycles
+    where agent_id = p_agent_id and status = 'enrolled'
+      and level = v_profile.training_level
+    order by cycle_number desc limit 1 for update;
 
-  insert into agent_training_cycles
-    (agent_id, profile_id, level, track, cycle_number, status, started_at)
-  values
-    (p_agent_id, v_profile.id, v_profile.training_level, v_track,
-     v_cycle_number, 'in_progress', now())
-  returning id into v_cycle_id;
+  if found then
+    v_track := coalesce(nullif(p_track, ''), v_track);
+    update agent_training_cycles set status = 'in_progress',
+      track = v_track, started_at = now()
+    where id = v_cycle_id;
+  else
+    select coalesce(max(cycle_number), 0) + 1 into v_cycle_number
+      from agent_training_cycles where agent_id = p_agent_id;
+    v_track := coalesce(nullif(p_track, ''),
+      case when v_profile.training_level = 0 then 'foundation'
+        else 'strict_level_' || v_profile.training_level::text end);
+
+    insert into agent_training_cycles
+      (agent_id, profile_id, level, track, cycle_number, status, started_at)
+    values
+      (p_agent_id, v_profile.id, v_profile.training_level, v_track,
+       v_cycle_number, 'in_progress', now())
+    returning id into v_cycle_id;
+  end if;
 
   update agent_lifecycle_profiles set
     lifecycle_status = 'training', training_track = v_track,
