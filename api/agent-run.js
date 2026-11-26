@@ -69,6 +69,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'AUTOPOLIS_LLM_BASE_URL is not a valid URL' });
   }
 
+  const { error: recoveryError } = await supabase.rpc('recover_stale_agent_tasks', { p_now: new Date().toISOString() });
+  if (recoveryError) return res.status(500).json({ error: 'Could not recover stale task leases' });
+
   let taskId = positiveInteger(req.body?.task_id);
   let agentId = positiveInteger(req.body?.agent_id);
   if (req.body?.action === 'run_next') {
@@ -161,18 +164,16 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
-    const { data: claim, error: claimError } = await supabase.from('tasks').update({
-      status: 'running',
-      progress: 10,
-      started_at: now,
-      completed_at: null,
-      error: null,
-      attempts: Number(task.attempts || 0) + 1,
-      agent_name: agentRow.name,
-    }).eq('id', taskId).eq('status', 'queued').select().maybeSingle();
+    const { data: claim, error: claimError } = await supabase.rpc('claim_agent_task', {
+      p_task_id: taskId,
+      p_agent_id: agentId,
+      p_agent_name: agentRow.name,
+      p_now: now,
+    });
     if (claimError) throw claimError;
-    if (!claim) return res.status(409).json({ error: 'Task was claimed by another runner; refresh the queue' });
-    claimedTask = claim;
+    if (!claim?.claimed) return res.status(409).json({ error: 'Task or agent was claimed by another runner; refresh the queue' });
+    claimedTask = claim.task;
+    agent = agentRow;
 
     const { data: run, error: runError } = await supabase.from('agent_runs').insert({
       task_id: taskId,
@@ -185,18 +186,11 @@ export default async function handler(req, res) {
       started_at: now,
     }).select('id').single();
     if (runError) {
-      await supabase.from('tasks').update({ status: 'queued', progress: 0, started_at: null, error: 'Agent run ledger unavailable' }).eq('id', taskId);
+      await supabase.rpc('release_agent_task', { p_task_id: taskId, p_agent_id: agentId, p_error: 'Agent run ledger unavailable' });
       claimedTask = null;
       throw runError;
     }
     runId = run.id;
-    agent = agentRow;
-
-    const { error: busyError } = await supabase.from('agents').update({
-      status: 'busy',
-      current_task: 'Running task #' + taskId + ': ' + task.title,
-    }).eq('id', agentId);
-    if (busyError) throw busyError;
 
     const systemPrompt = instructions + '\n\nAUTOPOLIS CITY EXECUTION POLICY:\n' +
       '- Produce a complete, self-contained deliverable for this assigned task.\n' +
@@ -302,7 +296,9 @@ export default async function handler(req, res) {
       result,
       error: null,
       completed_at: completedAt,
-    }).eq('id', taskId).eq('status', 'running');
+      claimed_agent_id: null,
+      lease_expires_at: null,
+    }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId);
     if (taskUpdateError) throw taskUpdateError;
 
     await supabase.from('agent_runs').update({
@@ -332,7 +328,9 @@ export default async function handler(req, res) {
         progress: 0,
         error: message,
         completed_at: completedAt,
-      }).eq('id', taskId).eq('status', 'running');
+        claimed_agent_id: null,
+        lease_expires_at: null,
+      }).eq('id', taskId).eq('status', 'running').eq('claimed_agent_id', agentId);
     }
     if (runId) {
       await supabase.from('agent_runs').update({
