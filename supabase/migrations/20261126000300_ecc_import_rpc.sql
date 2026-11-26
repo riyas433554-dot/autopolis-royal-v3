@@ -70,7 +70,7 @@ begin
         source_description, source_tools, source_model, lifecycle_status,
         training_level, assigned_building_slug, assignment_duty
       ) values (
-        v_agent_id, 'ecc_pretrained', 'affaan-m/ECC', v_key,
+        v_agent_id, 'ecc_preconfigured', 'affaan-m/ECC', v_key,
         item->>'source_path', item->>'source_blob_sha', item->>'source_description',
         item->>'source_tools', item->>'source_model', v_status,
         0, coalesce(v_building, 'agent-academy'), v_duty
