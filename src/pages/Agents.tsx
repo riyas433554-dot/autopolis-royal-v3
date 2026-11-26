@@ -23,7 +23,7 @@ export default function AgentsPage() {
   const counts = { active: agents.filter(a => a.status === 'active').length, busy: agents.filter(a => a.status === 'busy').length, idle: agents.filter(a => a.status === 'idle').length, error: agents.filter(a => a.status === 'error').length };
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
-      <PageHead title="Agents Directory" sub="Database-backed agent records and lifecycle. City character animation is visual; autonomous model execution is not yet connected." badge="sim" />
+      <PageHead title="Agents Directory" sub="Database-backed ECC lifecycle and owner-triggered model task runs. City character animation remains visual; task execution is one-shot text generation with no tools." badge="sim" />
       <ECCWorkflow />
       <AgentTaskRunner />
       <div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
