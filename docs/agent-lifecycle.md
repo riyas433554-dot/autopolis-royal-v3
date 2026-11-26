@@ -1,53 +1,64 @@
 # Agent lifecycle (implementation contract)
 
-This is a persistent city simulation/lifecycle, not a pool of arbitrary live agents.
-The first stage stores lifecycle state; it does not import/seed ECC agents or start real worker execution.
+Autopolis will model ECC's published agent definitions as city agents. This is a persistent city lifecycle/simulation, not a pool of arbitrary live model instances.
+
+## ECC source of truth
+
+- Upstream: [affaan-m/ECC](https://github.com/affaan-m/ECC)
+- Pinned snapshot: `4adeee6732a12d1540f49a4d50a38ce8c97f9a53`
+- Source directory: `agents/*.md` (72 definitions at this snapshot)
+- Local pinned manifest: `data/ecc-agent-manifest.json`
+- These files are role/persona/tool/model instructions, **not trained model weights**. City agents use these definitions as their identity/role prompt; the Academy's score and training are Autopolis lifecycle data.
+- ECC role metadata must be parsed from the Markdown frontmatter; do not invent model, tools, or role data. Keep the source path and upstream blob SHA for provenance.
+- Re-import must be idempotent by unique key `affaan-m/ECC:<agent-definition-key>`; preserve lifecycle progress for existing profiles.
 
 ## Agent sources and initial placement
 
-- `ecc_pretrained`: agent identity comes from the ECC repository's trained-agent manifest.
-- `scratch`: newly created Academy trainee.
-- On ECC intake, split the available ECC roster approximately 50/50: one half enters Academy for training and the other half is assigned across city buildings for interview/hiring and support duties. Keep source identity stable so repeated imports cannot duplicate agents.
-- Do not create/import an ECC roster until the exact source repository/manifest is confirmed.
+- `ecc_pretrained`: a profile sourced from a pinned ECC agent definition.
+- `scratch`: a newly created Academy trainee with no ECC source.
+- On first ECC intake, split the 72 source definitions 36/36: 36 go to Academy for training; 36 are assigned across the other city buildings for interviews, hiring, and support duties. Keep the exact deterministic split in the importer so it never reshuffles on refresh.
+- The ECC half deployed to buildings starts as city staff; it can conduct interview/hiring/support work. Do not treat those as company-hired worker slots unless explicitly hired.
+- Do not download or execute ECC scripts/hooks as part of roster import. Import only reviewed Markdown agent metadata/instructions.
 
 ## State progression
 
 ```text
-ECC pretrained ── intake split ──> Academy (half) ── training/pass ──> Interview/Hire ──> Company
-ECC pretrained ── intake split ──> City assignment (half) ──> interview/hiring/support
-Scratch agent ───────────────────> Academy ── training/pass ──> Interview/Hire ──> Company
+ECC definitions ── pinned import ──> split 36 Academy / 36 city staff
+Scratch agent ────────────────────> Academy
 
+Academy training/pass ──> interview/hire eligibility ──> Company (max 2 active members)
 Company work:
-  score below graduation/performance threshold OR 10 mistakes
-    -> expelled from company -> Academy strict training Level 1
-  pass Level 1 -> eligible for company hiring -> work/score again
+  score below threshold OR 10 mistakes
+    -> expelled -> Academy strict training Level 1
+  pass Level 1 -> eligible for hiring -> company work
   next failure -> Academy strict training Level 2
-  pass Level 2 -> eligible for company hiring -> work/score again
-  each later failure increments strict training level
+  pass Level 2 -> eligible for hiring -> company work
+  every later failure increments strict training level
 ```
 
-A failure returns the agent to Academy; it does not delete the agent. Training completion and company hiring are separate events. Hiring must obey the existing company roster rule (maximum two active agents per company).
+A failure returns the agent to Academy; it does not delete the agent. Training completion and company hiring are separate events. Existing company roster enforcement remains authoritative.
 
 ## Persistence
 
-- `agent_lifecycle_profiles`: stable origin, current lifecycle state, level, score, mistake counters, current company and source key.
-- `agent_training_cycles`: every training attempt, level/track, score, mistakes and pass/fail result.
-- `agent_lifecycle_events`: append-only transition/audit history.
-- Existing `agents` and `company_members` remain the existing directory/roster; migration does not change their API shapes.
+- `agent_lifecycle_profiles`: source, state, level, score, mistake counters, current company and assignment.
+- `agent_training_cycles`: each training attempt, level/track, score, mistakes and pass/fail result.
+- `agent_lifecycle_events`: transition/audit history.
+- Existing `agents` and `company_members` remain the directory/roster; existing API response shapes are not changed.
 
 ## Provisional policy defaults
 
 - Pass score: 80/100.
 - Mistake threshold: 10.
-- A training cycle's mistake counter resets when a new cycle starts; lifetime mistakes remain cumulative.
-- Training level increments after each company expulsion; it never decreases.
-- ECC split for an odd roster: Academy receives floor(n/2), city deployment receives the remainder.
+- Per-cycle mistakes reset when a new cycle starts; lifetime mistakes remain cumulative.
+- Training level increments after each company expulsion and never decreases.
+- ECC 72 split is deterministic 36/36.
 
-These are implementation defaults pending owner confirmation; keep them configurable in the lifecycle service rather than hard-coded in UI.
+These are defaults, not final owner-approved balance settings. Keep them configurable in the lifecycle service, not hard-coded in UI.
 
 ## Safety/rollout
 
-- This migration is additive and creates no agents.
-- Lifecycle tables have RLS enabled and no public/anon policies. Read/write should be through trusted server-side service-role code only.
-- Do not connect city labels to lifecycle records until API/state transitions are implemented and verified.
-- Do not deploy or merge to `main` until migration and end-to-end state-transition tests pass.
+- Migration is additive and creates no agents.
+- Lifecycle tables have RLS enabled and no public/anon policies; trusted server-side service-role code only.
+- Roster import is metadata-only; no upstream hooks/scripts are executed.
+- Do not connect city labels until lifecycle APIs and transition tests are verified.
+- Do not merge/deploy until migration, importer idempotency, state-transition tests and E2E are green.
