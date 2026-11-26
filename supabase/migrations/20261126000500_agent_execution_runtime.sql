@@ -1,6 +1,7 @@
 -- Autopolis agent execution ledger and task result storage.
 -- Additive only; no task is claimed or run by this migration.
 alter table public.tasks
+  add column if not exists description text,
   add column if not exists result text,
   add column if not exists error text,
   add column if not exists started_at timestamptz,
