@@ -7,14 +7,12 @@ const PROVIDERS = [
     id: 'meta',
     name: 'Facebook + Instagram (Meta)',
     env: ['META_APP_ID', 'META_APP_SECRET', 'AUTOPOLIS_TOKEN_ENCRYPTION_KEY'],
-    clientId: 'META_APP_ID',
     note: 'Instagram needs a Business/Creator account linked to a Facebook Page. Meta Dev mode only allows app owner/tester accounts until App Review passes.',
   },
   {
     id: 'youtube',
     name: 'YouTube (Google)',
     env: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'AUTOPOLIS_TOKEN_ENCRYPTION_KEY'],
-    clientId: 'GOOGLE_CLIENT_ID',
     note: 'Uploads from an unverified YouTube API project may be restricted to private until Google verifies the app. Google Sign-In for login is separate.',
   },
 ];
@@ -22,6 +20,12 @@ const PROVIDERS = [
 function isOwner(req) {
   const token = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN;
   return Boolean(token && req.headers?.authorization === 'Bearer ' + token);
+}
+
+function encryptionKeyIsValid(value) {
+  if (!value) return false;
+  const key = /^[a-f0-9]{64}$/i.test(value) ? Buffer.from(value, 'hex') : Buffer.from(value, 'base64');
+  return key.length === 32;
 }
 
 function providerConfig(provider) {
@@ -74,7 +78,7 @@ export default async function handler(req, res) {
       const tableMissing = !!error;
       const accounts = data || [];
       const providers = PROVIDERS.map(p => {
-        const envPresent = Object.fromEntries(p.env.map(key => [key, !!process.env[key]]));
+        const envPresent = Object.fromEntries(p.env.map(key => [key, key === 'AUTOPOLIS_TOKEN_ENCRYPTION_KEY' ? encryptionKeyIsValid(process.env[key]) : !!process.env[key]]));
         const ready = Object.values(envPresent).every(Boolean);
         const providerAccounts = accounts.filter(account => account.provider === p.id);
         return {
@@ -103,8 +107,8 @@ export default async function handler(req, res) {
       const provider = typeof req.body?.provider === 'string' ? req.body.provider : '';
       const config = providerConfig(provider);
       if (!config) return res.status(400).json({ error: 'Unsupported provider. Use meta or youtube.' });
-      const missing = config.env.filter(key => !process.env[key]);
-      if (missing.length) return res.status(503).json({ error: 'Missing server environment variables: ' + missing.join(', ') });
+      const missing = config.env.filter(key => key === 'AUTOPOLIS_TOKEN_ENCRYPTION_KEY' ? !encryptionKeyIsValid(process.env[key]) : !process.env[key]);
+      if (missing.length) return res.status(503).json({ error: 'Missing or invalid server environment variables: ' + missing.join(', ') });
       const state = randomBytes(32).toString('hex');
       const stateHash = createHash('sha256').update(state).digest('hex');
       const { error } = await supabase.rpc('create_oauth_state', {
