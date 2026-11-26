@@ -37,7 +37,7 @@ export default function AgentTaskRunner() {
   const [profiles, setProfiles] = useState<LifecycleProfile[]>([]);
   const [token, setToken] = useState('');
   const [choice, setChoice] = useState<Record<number, string>>({});
-  const [busy, setBusy] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | 'next' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -77,7 +77,7 @@ export default function AgentTaskRunner() {
   const assignedAgent = (task: CityTask) => {
     const available = task.company_id
       ? eligible.filter(agent => agent.lifecycle_status === 'company' && Number(agent.company_id) === Number(task.company_id))
-      : eligible;
+      : eligible.filter(agent => agent.lifecycle_status === 'city_staff');
     const selectedId = Number(choice[task.id] || task.assigned_agent_id || 0);
     if (selectedId) return available.find(agent => agent.id === selectedId);
     if (task.assigned_agent_id) return undefined;
@@ -115,6 +115,24 @@ export default function AgentTaskRunner() {
     }
   };
 
+  const runNext = async () => {
+    if (!token.trim()) { setError('Enter the owner lifecycle token to run the queue.'); return; }
+    setBusy('next'); setError(''); setMessage('');
+    try {
+      const result = await api('/api/agent-run', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token.trim() },
+        body: JSON.stringify({ action: 'run_next' }),
+      });
+      if (result?.no_work) setMessage(result.message || 'No queued task currently has an eligible idle agent.');
+      else setMessage('Auto-assigned task #' + result.task_id + ' to ' + (result.agent_name || 'ECC agent') + '. Deliverable saved.\n' + String(result.result || '').slice(0, 1200));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Automatic task run failed');
+      await load();
+    } finally { setBusy(null); }
+  };
+
   const retry = async (task: CityTask) => {
     try {
       await api('/api/tasks', { method: 'PUT', body: JSON.stringify({ id: task.id, status: 'queued', progress: 0 }) });
@@ -127,13 +145,13 @@ export default function AgentTaskRunner() {
 
   return <section className="mb-6 rounded-3xl border border-emerald-400/20 bg-emerald-950/15 p-4 sm:p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><p className="text-[10px] font-black tracking-[0.25em] text-emerald-300">CITY WORKFLOW · EXECUTOR</p><h2 className="mt-1 font-display text-xl font-bold text-white">Run a queued task with an ECC agent</h2><p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">The owner selects an eligible city staff/company agent. The server fetches the pinned ECC role prompt, verifies its Git blob SHA, calls the configured OpenAI-compatible model endpoint, and saves the result. No tools or external side effects are available in this first runtime.</p></div>
-      <button onClick={() => void load()} disabled={loading || busy !== null} className="rounded-full border border-white/15 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Refresh queue</button>
+      <div><p className="text-[10px] font-black tracking-[0.25em] text-emerald-300">CITY WORKFLOW · EXECUTOR</p><h2 className="mt-1 font-display text-xl font-bold text-white">Run a queued task with an ECC agent</h2><p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400">The owner can run one task with a selected agent or let the queue auto-assign an eligible idle ECC agent. Company agents can write private source files, search owner resources and create bounded follow-up tasks. Publishing, client contact and deployment remain owner-approved.</p></div>
+      <div className="flex gap-2"><button onClick={() => void runNext()} disabled={busy !== null || !token.trim()} className="rounded-full bg-emerald-400 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-50">{busy === 'next' ? 'RUNNING…' : 'RUN NEXT TASK'}</button><button onClick={() => void load()} disabled={loading || busy !== null} className="rounded-full border border-white/15 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Refresh queue</button></div>
     </div>
     <label className="mt-3 block text-xs font-semibold text-slate-300">Owner lifecycle token <span className="font-normal text-slate-500">(memory only)</span>
       <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN" className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-600" />
     </label>
-    <p className="mt-2 text-[10px] text-slate-500">Server also needs AUTOPOLIS_LLM_API_KEY + AUTOPOLIS_LLM_MODEL. Optional AUTOPOLIS_LLM_BASE_URL sets the full chat-completions endpoint.</p>
+    <p className="mt-2 text-[10px] text-slate-500">Server needs NVIDIA_API_KEY (Nemotron default) or AUTOPOLIS_LLM_API_KEY + AUTOPOLIS_LLM_MODEL. Optional AUTOPOLIS_LLM_BASE_URL overrides the endpoint.</p>
     {error && <p role="alert" className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">{error}</p>}
     {message && <p role="status" className="mt-3 whitespace-pre-wrap rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">{message}</p>}
     {loading ? <p className="py-4 text-center text-xs text-slate-400">Loading queue…</p> : <>
@@ -142,7 +160,7 @@ export default function AgentTaskRunner() {
         {queued.map(task => {
           const agent = assignedAgent(task);
           return <article key={task.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">#{task.id} · {task.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{task.building_slug} · {task.priority}{task.company_id ? ' · company #' + task.company_id : ''} · {task.deliverable_type || 'report'}</p></div><button onClick={() => void runTask(task)} disabled={busy !== null || eligible.length === 0} className="rounded-full bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{busy === task.id ? 'RUNNING…' : 'RUN TASK'}</button></div>
+            <div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">#{task.id} · {task.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{task.building_slug} · {task.priority}{task.company_id ? ' · company #' + task.company_id : ''} · {task.deliverable_type || 'report'}</p></div><button onClick={() => void runTask(task)} disabled={busy !== null || !agent} className="rounded-full bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{busy === task.id ? 'RUNNING…' : 'RUN TASK'}</button></div>
             <select value={String(agent?.id || '')} onChange={e => setChoice(prev => ({ ...prev, [task.id]: e.target.value }))} className="mt-2 w-full rounded-xl border border-white/10 bg-[#151228] px-3 py-2 text-xs text-white">
               <option value="">Choose ECC agent…</option>
               {(task.company_id ? eligible.filter(option => option.lifecycle_status === 'company' && Number(option.company_id) === Number(task.company_id)) : eligible).map(option => <option key={option.id} value={option.id}>{option.name} — {option.role} · {option.building_slug}</option>)}
