@@ -13,6 +13,7 @@ type CityAgent = {
 type LifecycleProfile = {
   agent_id: number;
   lifecycle_status: string;
+  company_id?: number | null;
   assigned_building_slug?: string | null;
   agent?: CityAgent | null;
 };
