@@ -96,11 +96,13 @@ async function metaAccounts(code) {
   }).toString();
   let pageResponse = await fetchJson(pagesUrl);
   const pages = [];
-  for (let page = 0; pageResponse && pages.length < 500; pageResponse = pageResponse.paging?.next ? await fetchJson(pageResponse.paging.next) : null) {
+  while (pageResponse && pages.length < 500) {
     for (const item of pageResponse.data || []) {
       pages.push(item);
       if (pages.length >= 500) break;
     }
+    const nextPage = pageResponse.paging?.next;
+    pageResponse = nextPage && pages.length < 500 ? await fetchJson(nextPage) : null;
   }
   let saved = 0;
   for (const page of pages) {
