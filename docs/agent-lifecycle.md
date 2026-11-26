@@ -68,3 +68,15 @@ These are defaults, not final owner-approved balance settings. Keep them configu
 After the three timestamped migrations are applied and the Render service has the private environment variable `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`, the owner can trigger the metadata-only import with an authenticated POST to `/api/eccimport`. Keep the token private; never paste it into chat or commit it. The endpoint fetches only the pinned `agents/*.md` files, parses their frontmatter, and calls the transactional Supabase RPC. It does not execute ECC scripts/hooks.
 
 The first import is deterministic: manifest order alternates 36 definitions into Academy and 36 into city staff, with city staff round-robin across existing buildings except `agent-academy`. Repeated imports update source metadata and preserve lifecycle status, score, level, mistakes, and assignments. Do not call the endpoint until the migration and secret are configured.
+
+## Lifecycle API
+
+`GET /api/lifecycle` returns lifecycle profiles with their agent/company summary.
+Owner mutations require `Authorization: Bearer <AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN>`:
+
+- `POST /api/lifecycle` `{ action: "start_training", agent_id, track? }`
+- `POST /api/lifecycle` `{ action: "complete_training", agent_id, score, mistakes, feedback? }`
+- `POST /api/lifecycle` `{ action: "record_work", agent_id, score, mistakes, feedback? }`
+- `POST /api/lifecycle` `{ action: "hire", agent_id, company_id }`
+
+Company performance below 80/100 or reaching 10 mistakes in the current company cycle triggers expulsion, deactivates the company membership, increments strict training level, and enrolls the agent in the next strict cycle. Training pass requires score >= 80 and fewer than 10 mistakes; passing grants interview eligibility, not automatic hiring. Hiring is transactional and enforces max 2 active company members.
