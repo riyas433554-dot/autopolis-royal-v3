@@ -13,7 +13,7 @@ const PROVIDERS = [
     id: 'youtube',
     name: 'YouTube (Google)',
     env: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'AUTOPOLIS_TOKEN_ENCRYPTION_KEY'],
-    note: 'Uploads from an unverified YouTube API project may be restricted to private until Google verifies the app. Google Sign-In for login is separate.',
+    note: 'Connect a Google account and choose the YouTube channel to authorize. Google OAuth publishing and YouTube API compliance are separate from Google Sign-In for app login.',
   },
 ];
 
@@ -58,7 +58,7 @@ function createAuthUrl(provider, state) {
     state,
     scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'consent select_account',
     include_granted_scopes: 'true',
   }).toString();
   return url.toString();
