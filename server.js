@@ -42,7 +42,7 @@ async function parseJsonBody(req) {
 const handlers = {};
 const handlerFiles = [
   'activity', 'agents', 'awards', 'bookmarks', 'bootstrap', 'buildings',
-  'clients', 'comments', 'companies', 'connected', 'dispatch', 'members',
+  'clients', 'comments', 'companies', 'connected', 'dispatch', 'eccimport', 'lifecycle', 'members',
   'messages', 'notifications', 'outputs', 'posts', 'profiles', 'resources',
   'reviews', 'scheduled', 'tasks', 'treasury',
 ];
