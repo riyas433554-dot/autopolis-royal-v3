@@ -90,7 +90,7 @@ export default function ECCWorkflow() {
       return;
     }
     const companyId = Number(companyChoice[agentId] || companies[0]?.id || 0);
-    if (action === 'hire' && !Number.isInteger(companyId + 0) || (action === 'hire' && companyId <= 0)) {
+    if (action === 'hire' && (!Number.isInteger(companyId) || companyId <= 0)) {
       setError('Select a valid company before hiring.');
       return;
     }
