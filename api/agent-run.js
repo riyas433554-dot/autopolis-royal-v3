@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import supabase from './db-client.js';
+import { buildCompanyOutput } from './company-output.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const MAX_OUTPUT_CHARS = 50000;
@@ -53,9 +54,15 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
 
-  const apiKey = process.env.AUTOPOLIS_LLM_API_KEY;
-  const model = process.env.AUTOPOLIS_LLM_MODEL;
-  const endpoint = process.env.AUTOPOLIS_LLM_BASE_URL || 'https://api.openai.com/v1/chat/completions';
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  const apiKey = process.env.AUTOPOLIS_LLM_API_KEY || nvidiaKey;
+  const model = process.env.AUTOPOLIS_LLM_MODEL ||
+    (nvidiaKey ? 'nvidia/nemotron-3.5-super-vl-120b-a12b' : '');
+  const endpoint = process.env.AUTOPOLIS_LLM_BASE_URL ||
+    (nvidiaKey ? 'https://integrate.api.nvidia.com/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions');
+  const configuredMaxTokens = Number(process.env.AUTOPOLIS_LLM_MAX_TOKENS || 8000);
+  const maxTokens = Number.isInteger(configuredMaxTokens) && configuredMaxTokens >= 1024 && configuredMaxTokens <= 16000
+    ? configuredMaxTokens : 8000;
   if (!apiKey || !model) {
     return res.status(503).json({
       error: 'Agent runtime is not configured. Set AUTOPOLIS_LLM_API_KEY and AUTOPOLIS_LLM_MODEL on the server.'
@@ -102,9 +109,15 @@ export default async function handler(req, res) {
     if (!profile || !['city_staff', 'company'].includes(profile.lifecycle_status)) {
       return res.status(409).json({ error: 'Only ECC city staff or hired company agents can execute city work; Academy agents must train first' });
     }
+    if (task.assigned_agent_id && Number(task.assigned_agent_id) !== agentId) {
+      return res.status(409).json({ error: 'Task is assigned to a different agent' });
+    }
+    if (profile.lifecycle_status === 'company' && task.company_id && Number(task.company_id) !== Number(profile.company_id)) {
+      return res.status(409).json({ error: 'Task belongs to a different company' });
+    }
     if (profile.lifecycle_status === 'company') {
       const { data: membership, error: memberError } = await supabase
-        .from('company_members').select('id').eq('agent_id', agentId).eq('is_active', true).limit(1);
+        .from('company_members').select('id').eq('agent_id', agentId).eq('company_id', profile.company_id).eq('is_active', true).limit(1);
       if (memberError) throw memberError;
       if (!membership?.length) return res.status(409).json({ error: 'Company agent has no active company membership' });
     }
@@ -156,10 +169,11 @@ export default async function handler(req, res) {
     if (busyError) throw busyError;
 
     const systemPrompt = instructions + '\n\nAUTOPOLIS CITY EXECUTION POLICY:\n' +
-      '- You are generating the deliverable for one assigned city task.\n' +
+      '- You are generating the deliverable for one assigned task.\n' +
       '- Do not claim that you used tools, changed files, sent messages, browsed websites, or performed external actions unless a tool result is explicitly provided in this conversation.\n' +
-      '- No tools are available in this run. Produce the best self-contained answer, plan, code, report, or draft requested by the task.\n' +
-      '- Respect safety, privacy, copyright, and the task scope. State blockers and assumptions clearly.\n' +
+      '- No tools are available in this run. Produce a complete, self-contained deliverable: code, proposal, app/website specification, automation design, game design, ad/video script, or report as requested.\n' +
+      '- Company agents must produce a draft artifact suitable for owner review; never claim publication, client contact, payment, deployment, or hosting.\n' +
+      '- Respect safety, privacy, copyright, and task scope. Use original or licensed creative material; state assumptions and blockers.\n' +
       '- Return the deliverable directly, with concise completion notes.';
 
     const llmResponse = await fetch(endpointUrl, {
@@ -172,7 +186,7 @@ export default async function handler(req, res) {
           { role: 'user', content: 'City task: ' + task.title + '\nTask details / acceptance criteria: ' + (task.description || 'Not provided') + '\nBuilding: ' + (task.building_slug || 'operations-tower') + '\nPriority: ' + (task.priority || 'medium') },
         ],
         temperature: 0.2,
-        max_tokens: 2500,
+        max_tokens: maxTokens,
       }),
       signal: AbortSignal.timeout(90000),
     });
@@ -185,6 +199,18 @@ export default async function handler(req, res) {
     const output = responseText(responsePayload);
     if (!output) throw new Error('LLM response contained no assistant text');
     const result = output.slice(0, MAX_OUTPUT_CHARS);
+    let outputRecord = null;
+    const companyOutput = buildCompanyOutput({ task, agent: agentRow, profile, result });
+    if (companyOutput) {
+      const { data: existingOutput, error: existingOutputError } = await supabase
+        .from('outputs').select('id').eq('task_id', taskId).maybeSingle();
+      if (existingOutputError) throw existingOutputError;
+      const outputWrite = existingOutput
+        ? await supabase.from('outputs').update(companyOutput).eq('id', existingOutput.id).select('id').single()
+        : await supabase.from('outputs').insert(companyOutput).select('id').single();
+      if (outputWrite.error) throw outputWrite.error;
+      outputRecord = outputWrite.data;
+    }
     const completedAt = new Date().toISOString();
 
     const { error: taskUpdateError } = await supabase.from('tasks').update({
@@ -212,7 +238,7 @@ export default async function handler(req, res) {
       detail: agentRow.name + ' · ' + model + ' · ' + task.title,
     });
 
-    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result });
+    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result, output_id: outputRecord?.id || null });
   } catch (error) {
     const rawMessage = String(error?.message || error).slice(0, 1000);
     const message = apiKey ? rawMessage.replaceAll(apiKey, '[redacted]') : rawMessage;
