@@ -15,7 +15,7 @@ export function buildInitialEccRoster(entries, buildingRows) {
     throw new Error(`Expected exactly ${ECC_CITY_STAFF_COUNT} city buildings; found ${buildingRows?.length ?? 0}`);
   }
 
-  const slugs = buildingRows.map(row => row?.slug).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const slugs = buildingRows.map(row => row?.slug).filter(Boolean).sort();
   if (slugs.length !== ECC_CITY_STAFF_COUNT || new Set(slugs).size !== ECC_CITY_STAFF_COUNT) {
     throw new Error('City building slugs must be 37 non-empty unique values');
   }
