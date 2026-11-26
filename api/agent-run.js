@@ -132,6 +132,7 @@ export default async function handler(req, res) {
     if (['busy', 'working'].includes(String(agentRow.status).toLowerCase())) {
       return res.status(409).json({ error: 'Agent is already busy' });
     }
+    if (task.assigned_agent_id && Number(task.assigned_agent_id) !== agentId) return res.status(409).json({ error: 'Task is assigned to a different agent' });
 
     const { data: profile, error: profileError } = await supabase
       .from('agent_lifecycle_profiles').select('*').eq('agent_id', agentId).maybeSingle();
