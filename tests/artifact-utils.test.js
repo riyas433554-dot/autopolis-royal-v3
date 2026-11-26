@@ -21,6 +21,6 @@ test('maps common project file types to safe text MIME types', () => {
 
 test('rejects empty, binary and oversized text artifacts', () => {
   assert.throws(() => validateArtifactContent('  '), /non-empty/i);
-  assert.throws(() => validateArtifactContent('hello\\0world'), /binary/i);
+  assert.throws(() => validateArtifactContent('hello' + String.fromCharCode(0) + 'world'), /binary/i);
   assert.throws(() => validateArtifactContent('x'.repeat(100001)), /size/i);
 });
