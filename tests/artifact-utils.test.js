@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { normalizeArtifactPath, artifactMimeType, validateArtifactContent } from '../api/artifact-utils.js';
 
 test('normalizes nested artifact paths and Windows separators', () => {
-  assert.equal(normalizeArtifactPath('src\\\\main.ts'), 'src/main.ts');
+  assert.equal(normalizeArtifactPath('src\\main.ts'), 'src/main.ts');
   assert.equal(normalizeArtifactPath('public/index.html'), 'public/index.html');
 });
 
