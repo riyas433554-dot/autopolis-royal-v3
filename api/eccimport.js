@@ -1,5 +1,6 @@
 import supabase from './db-client.js';
 import { readFile } from 'node:fs/promises';
+import { gunzipSync } from 'node:zlib';
 
 const ECC_REPO = 'affaan-m/ECC';
 
@@ -15,18 +16,38 @@ function parseFrontmatter(markdown) {
   return fields;
 }
 
-async function mapLimit(items, limit, fn) {
-  const output = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      output[index] = await fn(items[index], index);
+function extractAgentFiles(tarball, expectedPaths) {
+  const tar = gunzipSync(tarball);
+  const expected = new Set(expectedPaths);
+  const found = new Map();
+  let offset = 0;
+
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every(byte => byte === 0)) break;
+
+    const name = header.subarray(0, 100).toString('utf8').split('\\0')[0];
+    const prefix = header.subarray(345, 500).toString('utf8').split('\\0')[0];
+    const path = prefix ? `${prefix}/${name}` : name;
+    const sizeText = header.subarray(124, 136).toString('utf8').split('\\0')[0].trim();
+    const size = Number.parseInt(sizeText || '0', 8);
+    if (!Number.isFinite(size) || size < 0) throw new Error('Invalid ECC archive entry size');
+
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    if (dataEnd > tar.length) throw new Error('Truncated ECC source archive');
+    for (const expectedPath of expected) {
+      if (path.endsWith('/' + expectedPath)) {
+        found.set(expectedPath, tar.subarray(dataStart, dataEnd).toString('utf8'));
+      }
     }
-  });
-  await Promise.all(workers);
-  return output;
+    offset = dataStart + Math.ceil(size / 512) * 512;
+  }
+
+  if (found.size !== expected.size) {
+    throw new Error(`Pinned ECC archive missing ${expected.size - found.size} expected agent files`);
+  }
+  return found;
 }
 
 function displayName(key) {
@@ -66,11 +87,16 @@ export default async function handler(req, res) {
       .filter(slug => slug && slug !== 'agent-academy');
     if (!cityBuildings.length) return res.status(409).json({ error: 'No city buildings available for ECC placement' });
 
-    const payload = await mapLimit(manifest.agents, 4, async (entry, index) => {
-      const url = `https://raw.githubusercontent.com/${ECC_REPO}/${manifest.source_ref}/${entry.path}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
-      if (!response.ok) throw new Error(`ECC source fetch failed for ${entry.key} (${response.status})`);
-      const markdown = await response.text();
+    const archiveResponse = await fetch(
+      `https://codeload.github.com/${ECC_REPO}/tar.gz/${manifest.source_ref}`,
+      { signal: AbortSignal.timeout(25000) }
+    );
+    if (!archiveResponse.ok) throw new Error(`Pinned ECC archive fetch failed (${archiveResponse.status})`);
+    const archive = Buffer.from(await archiveResponse.arrayBuffer());
+    const sourceFiles = extractAgentFiles(archive, manifest.agents.map(entry => entry.path));
+
+    const payload = manifest.agents.map((entry, index) => {
+      const markdown = sourceFiles.get(entry.path);
       const meta = parseFrontmatter(markdown);
       const isAcademy = index % 2 === 0;
       const assignedBuilding = isAcademy ? 'agent-academy' : cityBuildings[Math.floor(index / 2) % cityBuildings.length];
