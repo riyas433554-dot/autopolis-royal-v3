@@ -158,6 +158,26 @@ export function LibraryPage() {
     try { await navigator.clipboard.writeText(file.content); setNote('Copied ' + file.path + ' to clipboard.'); }
     catch { setNote('Clipboard access failed for ' + file.path + '. Open the file content and copy it manually.'); }
   };
+  const downloadSourceZip = async (o: Output) => {
+    try {
+      const headers: Record<string, string> = ownerToken.trim() ? { Authorization: 'Bearer ' + ownerToken.trim() } : {};
+      const response = await fetch('/api/download-deliverable?output_id=' + o.id, { headers });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'ZIP download failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'autopolis-deliverable-' + o.id + '.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setNote('Downloaded source package for “' + o.title + '”.');
+    } catch (e: any) { setNote('⚠ ' + (e.message || 'ZIP download failed')); }
+  };
   const submitDraftForReview = async (o: Output) => {
     if (!ownerToken.trim()) { setNote('Owner token required to submit a draft to the public Library.'); return; }
     try {
@@ -209,7 +229,7 @@ export function LibraryPage() {
             <div className="mt-3 flex gap-1.5"><button onClick={() => view(o)} className="flex items-center gap-1 rounded-full bg-white/5 px-3.5 py-2 text-[11px] font-bold text-white hover:bg-white/10"><Eye size={12} /> {openId === o.id ? 'Close' : 'View & review'}</button><button onClick={() => like(o)} className={`flex items-center gap-1 rounded-full px-3.5 py-2 text-[11px] font-bold ${liked.includes(o.id) ? 'bg-pink-500/20 text-pink-300' : 'bg-white/5 text-slate-200 hover:bg-white/10'}`}><Heart size={12} fill={liked.includes(o.id) ? 'currentColor' : 'none'} /> Like</button>{o.status !== 'published' && <Link to="/publishing" className="ml-auto rounded-full bg-amber-400/15 px-3.5 py-2 text-[11px] font-bold text-amber-200">Publish →</Link>}</div>
             {openId === o.id && (<div className="mt-3 rounded-2xl bg-black/25 p-3">
               {contentBusy[o.id] ? <p className="text-xs text-slate-400">Loading deliverable…</p> : contentById[o.id] !== undefined ? <details open className="mb-3 rounded-xl border border-emerald-400/15 bg-emerald-500/5 p-3"><summary className="cursor-pointer text-xs font-bold text-emerald-200">Deliverable · {contentById[o.id].length.toLocaleString()} characters</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">{contentById[o.id]}</pre></details> : <p className="mb-3 text-xs text-amber-200">{contentErrors[o.id] || (o.status === 'draft' ? 'Private draft. Enter owner token to view and approve it.' : 'Deliverable content not available.')}</p>}
-              {artifactFilesById[o.id]?.length > 0 && <div className="mb-3 rounded-xl border border-sky-400/15 bg-sky-500/5 p-3"><p className="mb-2 text-[11px] font-black tracking-widest text-sky-200">SOURCE FILES ({artifactFilesById[o.id].length})</p>{artifactFilesById[o.id]?.map(file => <details key={file.path} className="mb-1.5 rounded-lg bg-black/20 p-2"><summary className="cursor-pointer text-xs font-semibold text-slate-200">{file.path} · {file.size_bytes.toLocaleString()} bytes</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-300">{file.content}</pre><button onClick={() => void copyArtifactFile(file)} className="mt-2 rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white">COPY FILE</button></details>)}</div>}
+              {artifactFilesById[o.id]?.length > 0 && <div className="mb-3 rounded-xl border border-sky-400/15 bg-sky-500/5 p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-black tracking-widest text-sky-200">SOURCE FILES ({artifactFilesById[o.id].length})</p><button disabled={o.status === 'draft' && !ownerToken.trim()} onClick={() => void downloadSourceZip(o)} className="rounded-full bg-sky-300 px-3 py-1.5 text-[10px] font-black text-slate-950 disabled:opacity-40">DOWNLOAD SOURCE ZIP</button></div>{artifactFilesById[o.id]?.map(file => <details key={file.path} className="mb-1.5 rounded-lg bg-black/20 p-2"><summary className="cursor-pointer text-xs font-semibold text-slate-200">{file.path} · {file.size_bytes.toLocaleString()} bytes</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-300">{file.content}</pre><button onClick={() => void copyArtifactFile(file)} className="mt-2 rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white">COPY FILE</button></details>)}</div>}
               {o.status === 'draft' && contentById[o.id] && <button onClick={() => void submitDraftForReview(o)} className="mb-3 rounded-full bg-emerald-400 px-4 py-2 text-[11px] font-black text-slate-950">OWNER APPROVE → SUBMIT TO LIBRARY</button>}
               <p className="text-[11px] font-black tracking-widest text-slate-300">REVIEWS ({rc})</p>
               {rc === 0 ? <p className="mt-1 text-xs text-slate-500">No reviews yet — be the first to rate this work.</p> : reviews.filter(r => r.output_id === o.id).map(r => (<div key={r.id} className="mt-2 border-l-2 border-amber-500/30 pl-2.5"><p className="flex items-center gap-2 text-xs text-slate-200"><b>{r.reviewer_name}</b><Stars value={r.stars} size={11} /><span className="text-[10px] text-slate-500">{timeAgo(r.created_at)}</span></p>{r.comment && <p className="text-xs text-slate-400">{r.comment}</p>}</div>))}
