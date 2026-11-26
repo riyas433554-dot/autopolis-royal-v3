@@ -1,19 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import supabase from './db-client.js';
+import { getLlmConfig, callChatCompletion, responseText } from './llm-runtime.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const ECC_REF = '4adeee6732a12d1540f49a4d50a38ce8c97f9a53';
-
-function runtimeConfig() {
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  return {
-    apiKey: process.env.AUTOPOLIS_LLM_API_KEY || nvidiaKey,
-    model: process.env.AUTOPOLIS_LLM_MODEL || (nvidiaKey ? 'nvidia/nemotron-3.5-super-vl-120b-a12b' : ''),
-    endpoint: process.env.AUTOPOLIS_LLM_BASE_URL ||
-      (nvidiaKey ? 'https://integrate.api.nvidia.com/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions'),
-  };
-}
 
 function gitBlobSha(content) {
   const bytes = Buffer.from(content, 'utf8');
@@ -39,30 +30,6 @@ async function getTrainingInstructions(profile, agent) {
   return instructions;
 }
 
-function responseText(payload) {
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content.trim();
-  if (Array.isArray(content)) return content.map(part => typeof part?.text === 'string' ? part.text : '').join('').trim();
-  return '';
-}
-
-async function callModel(config, messages, maxTokens) {
-  const endpoint = new URL(config.endpoint);
-  const localHttp = endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(endpoint.hostname);
-  if (endpoint.protocol !== 'https:' && !localHttp) throw new Error('LLM endpoint must use HTTPS (HTTP allowed only for localhost)');
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.model, messages, temperature: 0.2, max_tokens: maxTokens, stream: false }),
-    signal: AbortSignal.timeout(90000),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error?.message || 'LLM provider returned HTTP ' + response.status);
-  const text = responseText(payload);
-  if (!text) throw new Error('LLM returned no assistant text');
-  return text;
-}
-
 function parseEvaluation(text) {
   const first = text.indexOf('{');
   const last = text.lastIndexOf('}');
@@ -79,7 +46,7 @@ function parseEvaluation(text) {
 }
 
 async function runAiTraining(agentId, track) {
-  const config = runtimeConfig();
+  const config = getLlmConfig();
   if (!config.apiKey || !config.model) {
     const error = new Error('Agent runtime is not configured. Add NVIDIA_API_KEY (preferred) or AUTOPOLIS_LLM_API_KEY and a model.');
     error.statusCode = 503;
@@ -103,15 +70,19 @@ async function runAiTraining(agentId, track) {
   const assignment = 'ACADEMY PRACTICAL ASSESSMENT\n' +
     'Agent: ' + agent.name + '\nRole: ' + agent.role + '\nTraining level: ' + profile.training_level + '\nTrack: ' + started.track + '\n\n' +
     'Produce one complete, practical role-specific work sample for Autopolis Royal. Show the reasoning needed for the deliverable, state assumptions, include validation/checklist, and demonstrate safety and quality. Do not claim external actions or tool use. Make the result strong enough to be reviewed and reused.';
-  const submission = await callModel(config, [
+  const submissionPayload = await callChatCompletion(config, [
     { role: 'system', content: instructions + '\n\nYou are taking an Academy assessment. Follow the role instructions, but produce a concrete, verifiable work sample rather than a generic description.' },
     { role: 'user', content: assignment },
-  ], 5000);
+  ], 5000, { reasoningEffort: 'high' });
+  const submission = responseText(submissionPayload);
+  if (!submission) throw new Error('Academy model returned no submission text');
   const evaluatorModel = process.env.AUTOPOLIS_LLM_EVALUATOR_MODEL || config.model;
-  const evaluationText = await callModel({ ...config, model: evaluatorModel }, [
+  const evaluationPayload = await callChatCompletion({ ...config, model: evaluatorModel }, [
     { role: 'system', content: 'You are a strict independent Academy evaluator. Grade the submitted work against the agent role and task. Score 0-100: role fit 25, correctness 25, completeness 20, practical usefulness 20, safety/quality 10. Count material mistakes; 10 or more mistakes fails. Do not inflate scores. Return ONLY JSON: {"score": integer, "mistakes": integer, "feedback": string, "criteria": {"role_fit": number, "correctness": number, "completeness": number, "usefulness": number, "safety": number}}.' },
     { role: 'user', content: 'ROLE: ' + agent.role + '\nTASK: ' + assignment + '\nSUBMISSION:\n' + submission.slice(0, 18000) },
-  ], 1400);
+  ], 1400, { reasoningEffort: 'low' });
+  const evaluationText = responseText(evaluationPayload);
+  if (!evaluationText) throw new Error('Academy evaluator returned no evaluation text');
   const evaluation = parseEvaluation(evaluationText);
   const { error: cycleUpdateError } = await supabase.from('agent_training_cycles').update({
     submission: submission.slice(0, 30000),
