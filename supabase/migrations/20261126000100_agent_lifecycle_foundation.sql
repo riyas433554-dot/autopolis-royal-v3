@@ -6,7 +6,7 @@
 create table if not exists agent_lifecycle_profiles (
   id bigserial primary key,
   agent_id integer not null unique references agents(id) on delete cascade,
-  origin text not null check (origin in ('ecc_pretrained', 'scratch')),
+  origin text not null check (origin in ('ecc_preconfigured', 'scratch')),
   source_repo text,
   source_agent_key text,
   lifecycle_status text not null default 'academy'
