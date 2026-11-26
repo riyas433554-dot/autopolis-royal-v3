@@ -130,7 +130,6 @@ export default async function handler(req, res) {
     if (claimError) throw claimError;
     if (!claim) return res.status(409).json({ error: 'Task was claimed by another runner; refresh the queue' });
     claimedTask = claim;
-    agent = agentRow;
 
     const { data: run, error: runError } = await supabase.from('agent_runs').insert({
       task_id: taskId,
@@ -148,11 +147,13 @@ export default async function handler(req, res) {
       throw runError;
     }
     runId = run.id;
+    agent = agentRow;
 
-    await supabase.from('agents').update({
+    const { error: busyError } = await supabase.from('agents').update({
       status: 'busy',
       current_task: 'Running task #' + taskId + ': ' + task.title,
     }).eq('id', agentId);
+    if (busyError) throw busyError;
 
     const systemPrompt = instructions + '\n\nAUTOPOLIS CITY EXECUTION POLICY:\n' +
       '- You are generating the deliverable for one assigned city task.\n' +
@@ -213,7 +214,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result });
   } catch (error) {
-    const message = String(error?.message || error).slice(0, 1000);
+    const rawMessage = String(error?.message || error).slice(0, 1000);
+    const message = apiKey ? rawMessage.replaceAll(apiKey, '[redacted]') : rawMessage;
     const completedAt = new Date().toISOString();
     if (claimedTask) {
       await supabase.from('tasks').update({
@@ -237,6 +239,6 @@ export default async function handler(req, res) {
       }).eq('id', agent.id);
     }
     console.error('Autopolis agent run failed:', message);
-    return res.status(502).json({ error: 'Agent run failed', detail: message, task_id: taskId });
+    return res.status(502).json({ error: 'Agent run failed; inspect the task error after refresh', task_id: taskId });
   }
 }
