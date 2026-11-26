@@ -144,10 +144,22 @@ export default async function handler(req, res) {
     if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
 
     const body = req.body || {};
-    const agentId = positiveInteger(body.agent_id);
-    if (!agentId) return res.status(400).json({ error: 'Valid agent_id required' });
+    let agentId = positiveInteger(body.agent_id);
+    if (body.action === 'train_next') {
+      const { data: nextProfile, error: nextProfileError } = await supabase.from('agent_lifecycle_profiles')
+        .select('agent_id,completed_training_cycles')
+        .eq('lifecycle_status', 'academy')
+        .order('completed_training_cycles', { ascending: true })
+        .order('agent_id', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (nextProfileError) throw nextProfileError;
+      if (!nextProfile) return res.status(200).json({ ok: true, no_agents: true, message: 'No Academy agents remain queued for training.' });
+      agentId = Number(nextProfile.agent_id);
+    }
+    if (!agentId) return res.status(400).json({ error: 'Valid agent_id required, or action=train_next' });
 
-    if (body.action === 'run_training') {
+    if (body.action === 'run_training' || body.action === 'train_next') {
       try {
         const result = await runAiTraining(agentId, typeof body.track === 'string' ? body.track : null);
         return res.status(200).json(result);
