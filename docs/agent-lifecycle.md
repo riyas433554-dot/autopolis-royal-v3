@@ -14,7 +14,7 @@ Autopolis will model ECC's published agent definitions as city agents. This is a
 
 ## Agent sources and initial placement
 
-- `ecc_pretrained`: a profile sourced from a pinned ECC agent definition.
+- `ecc_preconfigured`: a profile sourced from a pinned ECC agent definition (not trained model weights).
 - `scratch`: a newly created Academy trainee with no ECC source.
 - On first ECC intake, split the 72 source definitions 36/36: 36 go to Academy for training; 36 are assigned across the other city buildings for interviews, hiring, and support duties. Keep the exact deterministic split in the importer so it never reshuffles on refresh.
 - The ECC half deployed to buildings starts as city staff; it can conduct interview/hiring/support work. Do not treat those as company-hired worker slots unless explicitly hired.
