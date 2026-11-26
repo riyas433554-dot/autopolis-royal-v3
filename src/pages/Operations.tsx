@@ -66,9 +66,9 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {!['queued', 'running', 'completed', 'done'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'queued', progress: 0 })} className="rounded-full bg-sky-500/20 px-3 py-1.5 text-[11px] font-bold text-sky-200">Queue for ECC execution</button>}
                     {t.status === 'queued' && <Link to="/agents" className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[11px] font-bold text-emerald-200">Choose ECC agent & run →</Link>}
-                    {t.status !== 'blocked' && !['completed', 'done', 'error'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'blocked' })} className="rounded-full bg-red-500/20 px-3 py-1.5 text-[11px] font-bold text-red-200">Mark blocked</button>}
-                    {!['completed', 'done'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'completed', progress: 100 }, 'Task manually completed: ' + t.title)} className="rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-200">Mark complete manually</button>}
-                    <button onClick={() => deleteTask(t)} className="ml-auto flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-red-300"><Trash2 size={12} /> Delete</button>
+                    {t.status !== 'blocked' && !['completed', 'done', 'error', 'running'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'blocked' })} className="rounded-full bg-red-500/20 px-3 py-1.5 text-[11px] font-bold text-red-200">Mark blocked</button>}
+                    {!['completed', 'done', 'running'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'completed', progress: 100 }, 'Task manually completed: ' + t.title)} className="rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-200">Mark complete manually</button>}
+                    {t.status !== 'running' && <button onClick={() => deleteTask(t)} className="ml-auto flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-red-300"><Trash2 size={12} /> Delete</button>}
                   </div>
                 </div>))}</div>}
             </div>
