@@ -5,6 +5,7 @@ import { api, type Agent, type Building } from '../lib/api';
 import { Spinner, ErrorBox, Empty, PageHead, Avatar, StatusDot, Badge } from '../components/ui';
 import AgentModal from '../components/AgentModal';
 import ECCWorkflow from '../components/ECCWorkflow';
+import AgentTaskRunner from '../components/AgentTaskRunner';
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]); const [buildings, setBuildings] = useState<Building[]>([]);
@@ -24,6 +25,7 @@ export default function AgentsPage() {
     <div className="mx-auto max-w-7xl px-4 py-6">
       <PageHead title="Agents Directory" sub="Database-backed agent records and lifecycle. City character animation is visual; autonomous model execution is not yet connected." badge="sim" />
       <ECCWorkflow />
+      <AgentTaskRunner />
       <div className="mb-4 grid grid-cols-4 gap-2 sm:gap-3">
         {Object.entries(counts).map(([k, v]) => <div key={k} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-center"><p className="font-display text-xl font-bold text-white sm:text-2xl">{v}</p><p className="flex items-center justify-center gap-1 text-[10px] font-bold tracking-widest text-slate-400"><StatusDot status={k} />{k.toUpperCase()}</p></div>)}
       </div>
