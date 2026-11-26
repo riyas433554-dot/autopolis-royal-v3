@@ -69,9 +69,48 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'AUTOPOLIS_LLM_BASE_URL is not a valid URL' });
   }
 
-  const taskId = positiveInteger(req.body?.task_id);
-  const agentId = positiveInteger(req.body?.agent_id);
-  if (!taskId || !agentId) return res.status(400).json({ error: 'Valid task_id and agent_id are required' });
+  let taskId = positiveInteger(req.body?.task_id);
+  let agentId = positiveInteger(req.body?.agent_id);
+  if (req.body?.action === 'run_next') {
+    const [{ data: queuedTasks, error: queueError }, { data: profiles, error: profilesError }, { data: memberships, error: membershipsError }] = await Promise.all([
+      supabase.from('tasks').select('*').eq('status', 'queued').order('created_at', { ascending: true }).limit(100),
+      supabase.from('agent_lifecycle_profiles').select('*,agent:agents(*)').in('lifecycle_status', ['city_staff', 'company']).limit(200),
+      supabase.from('company_members').select('agent_id,company_id').eq('is_active', true),
+    ]);
+    if (queueError) throw queueError;
+    if (profilesError) throw profilesError;
+    if (membershipsError) throw membershipsError;
+    const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+    const orderedTasks = (queuedTasks || []).slice().sort((a, b) =>
+      (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2) ||
+      String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    const activeProfiles = (profiles || []).filter(profile => profile.agent &&
+      !['busy', 'working'].includes(String(profile.agent.status).toLowerCase()));
+    for (const queuedTask of orderedTasks) {
+      let candidates = activeProfiles.filter(profile => {
+        if (queuedTask.assigned_agent_id && Number(profile.agent_id) !== Number(queuedTask.assigned_agent_id)) return false;
+        if (queuedTask.company_id) {
+          return profile.lifecycle_status === 'company' &&
+            Number(profile.company_id) === Number(queuedTask.company_id) &&
+            (memberships || []).some(member => Number(member.agent_id) === Number(profile.agent_id) &&
+              Number(member.company_id) === Number(queuedTask.company_id));
+        }
+        return profile.lifecycle_status === 'city_staff';
+      });
+      if (!queuedTask.company_id && !queuedTask.assigned_agent_id) {
+        const exact = candidates.filter(profile =>
+          (profile.assigned_building_slug || profile.agent?.building_slug) === queuedTask.building_slug);
+        if (exact.length) candidates = exact;
+      }
+      if (candidates.length) {
+        taskId = Number(queuedTask.id);
+        agentId = Number(candidates[0].agent_id);
+        break;
+      }
+    }
+    if (!taskId || !agentId) return res.status(200).json({ ok: true, no_work: true, message: 'No queued task currently has an eligible idle agent.' });
+  }
+  if (!taskId || !agentId) return res.status(400).json({ error: 'Valid task_id and agent_id are required, or action=run_next' });
 
   let claimedTask = null;
   let runId = null;
@@ -102,6 +141,9 @@ export default async function handler(req, res) {
     }
     if (task.company_id && (profile.lifecycle_status !== 'company' || Number(task.company_id) !== Number(profile.company_id))) {
       return res.status(409).json({ error: 'Company task must be run by a hired agent from that company' });
+    }
+    if (!task.company_id && profile.lifecycle_status === 'company') {
+      return res.status(409).json({ error: 'Hired company agents must execute tasks assigned to their company' });
     }
     if (profile.lifecycle_status === 'company') {
       const { data: membership, error: memberError } = await supabase
