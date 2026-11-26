@@ -169,7 +169,7 @@ export default async function handler(req, res) {
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: 'City task: ' + task.title + '\nBuilding: ' + (task.building_slug || 'operations-tower') + '\nPriority: ' + (task.priority || 'medium') },
+          { role: 'user', content: 'City task: ' + task.title + '\nTask details / acceptance criteria: ' + (task.description || 'Not provided') + '\nBuilding: ' + (task.building_slug || 'operations-tower') + '\nPriority: ' + (task.priority || 'medium') },
         ],
         temperature: 0.2,
         max_tokens: 2500,
