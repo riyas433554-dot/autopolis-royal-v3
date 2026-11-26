@@ -118,6 +118,8 @@ export default async function handler(req, res) {
   let claimedTask = null;
   let runId = null;
   let agent = null;
+  let leaseToken = '';
+  let busyMarker = '';
 
   try {
     const [{ data: task, error: taskError }, { data: agentRow, error: agentError }] = await Promise.all([
@@ -165,8 +167,8 @@ export default async function handler(req, res) {
     }
 
     const now = new Date().toISOString();
-    const leaseToken = randomUUID();
-    const busyMarker = 'Running task #' + taskId + ' · lease ' + leaseToken.slice(0, 8) + ': ' + task.title;
+    leaseToken = randomUUID();
+    busyMarker = 'Running task #' + taskId + ' · lease ' + leaseToken.slice(0, 8) + ': ' + task.title;
     const { data: claim, error: claimError } = await supabase.rpc('claim_agent_task', {
       p_task_id: taskId,
       p_agent_id: agentId,
