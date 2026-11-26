@@ -16,11 +16,15 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const { output_id, reviewer_name, stars, comment } = req.body;
       const s = Number(stars);
-      if (!output_id || !s || s < 1 || s > 5) return res.status(400).json({ error: 'output_id and stars (1–5) required' });
-      const { data, error } = await supabase.from('reviews').insert({ output_id, reviewer_name: reviewer_name || 'Guest Citizen', stars: s, comment: comment || '' }).select().single();
+      const id = Number(output_id);
+      if (!Number.isInteger(id) || id <= 0 || !s || s < 1 || s > 5) return res.status(400).json({ error: 'output_id and stars (1–5) required' });
+      const { data: out, error: outputError } = await supabase.from('outputs').select('status').eq('id', id).maybeSingle();
+      if (outputError) throw outputError;
+      if (!out) return res.status(404).json({ error: 'Output not found' });
+      if (out.status === 'draft') return res.status(409).json({ error: 'Draft content is private until the owner submits it to the Library' });
+      const { data, error } = await supabase.from('reviews').insert({ output_id: id, reviewer_name: reviewer_name || 'Guest Citizen', stars: s, comment: comment || '' }).select().single();
       if (error) throw error;
-      const { data: out } = await supabase.from('outputs').select('status').eq('id', output_id).single();
-      if (out && out.status === 'in_library') await supabase.from('outputs').update({ status: 'reviewed' }).eq('id', output_id);
+      if (out.status === 'in_library') await supabase.from('outputs').update({ status: 'reviewed' }).eq('id', id);
       return res.status(201).json(data);
     }
     res.status(405).json({ error: 'Method not allowed' });
