@@ -1,0 +1,369 @@
+{
+  "source_repository": "affaan-m/ECC",
+  "source_ref": "4adeee6732a12d1540f49a4d50a38ce8c97f9a53",
+  "source_directory": "agents/",
+  "agent_definition_count": 72,
+  "source_type": "markdown_agent_definitions_not_model_weights",
+  "agents": [
+    {
+      "key": "a11y-architect",
+      "path": "agents/a11y-architect.md",
+      "blob_sha": "63f6c594c017af8741bf6f9da195552a87e5f6fc"
+    },
+    {
+      "key": "agent-evaluator",
+      "path": "agents/agent-evaluator.md",
+      "blob_sha": "2657d35d9035d91c24ae0a6a4e0a7a4b01cdffac"
+    },
+    {
+      "key": "architect",
+      "path": "agents/architect.md",
+      "blob_sha": "d65bea41b09b14faeb02f1dba606ce9f16933a33"
+    },
+    {
+      "key": "bengali-reviewer",
+      "path": "agents/bengali-reviewer.md",
+      "blob_sha": "bbe0217503ee1ac0883ec7c7d6e5925a06a600d8"
+    },
+    {
+      "key": "build-error-resolver",
+      "path": "agents/build-error-resolver.md",
+      "blob_sha": "23be5e7c9ed26dbf3751f83eb4853c7add5612a0"
+    },
+    {
+      "key": "chief-of-staff",
+      "path": "agents/chief-of-staff.md",
+      "blob_sha": "0ceb151f3b9dc6e004f73a05dc4bde34825c9093"
+    },
+    {
+      "key": "code-architect",
+      "path": "agents/code-architect.md",
+      "blob_sha": "4877556d2164c7394359bf20914321fcc30b4545"
+    },
+    {
+      "key": "code-explorer",
+      "path": "agents/code-explorer.md",
+      "blob_sha": "a97d0c3ce35f0493273f448fb70ec6f72f8c8278"
+    },
+    {
+      "key": "code-reviewer",
+      "path": "agents/code-reviewer.md",
+      "blob_sha": "884d94ec2d45a51ba091519dbee416c7d563e3d6"
+    },
+    {
+      "key": "code-simplifier",
+      "path": "agents/code-simplifier.md",
+      "blob_sha": "b14a4926c79551a2fd80629f9b3a5f703f36204f"
+    },
+    {
+      "key": "comment-analyzer",
+      "path": "agents/comment-analyzer.md",
+      "blob_sha": "a8e0f48e618bebb5a56b59997c306cbe99435201"
+    },
+    {
+      "key": "commit-reviewer",
+      "path": "agents/commit-reviewer.md",
+      "blob_sha": "3181edcf14afd113fbf72d3413709d61502c5513"
+    },
+    {
+      "key": "conversation-analyzer",
+      "path": "agents/conversation-analyzer.md",
+      "blob_sha": "1e557c2dc3b2d6c71d5764e9b0d669c05bd4f883"
+    },
+    {
+      "key": "cpp-build-resolver",
+      "path": "agents/cpp-build-resolver.md",
+      "blob_sha": "9eb29d969968f366160d61284800a4039fad8291"
+    },
+    {
+      "key": "cpp-reviewer",
+      "path": "agents/cpp-reviewer.md",
+      "blob_sha": "d29e7ae19620ba37f5727eadedf92d698dc91cd0"
+    },
+    {
+      "key": "csharp-reviewer",
+      "path": "agents/csharp-reviewer.md",
+      "blob_sha": "57bbaf6d65de8cc06b2171eaab7bafaa84cb2efe"
+    },
+    {
+      "key": "dart-build-resolver",
+      "path": "agents/dart-build-resolver.md",
+      "blob_sha": "872b99e4eb71aac0a90632468bd0be39e66b88a6"
+    },
+    {
+      "key": "database-reviewer",
+      "path": "agents/database-reviewer.md",
+      "blob_sha": "8537765b7ca94b5b349267b1b36cb5d9fd92d626"
+    },
+    {
+      "key": "django-build-resolver",
+      "path": "agents/django-build-resolver.md",
+      "blob_sha": "0a7f93f5135a7d5e33d5ac2adf8e18a9e44cb3ee"
+    },
+    {
+      "key": "django-reviewer",
+      "path": "agents/django-reviewer.md",
+      "blob_sha": "73725e4b427f03d12cc43fd8ff313cbdf0772081"
+    },
+    {
+      "key": "doc-updater",
+      "path": "agents/doc-updater.md",
+      "blob_sha": "5cc7dac99637e3accf23605edf38ed25b92ed4a0"
+    },
+    {
+      "key": "docs-lookup",
+      "path": "agents/docs-lookup.md",
+      "blob_sha": "f018ce4eb09f209760683f2ae52bfb80640f828d"
+    },
+    {
+      "key": "e2e-runner",
+      "path": "agents/e2e-runner.md",
+      "blob_sha": "12b629a950c86c84db9feba09b8794fc96f4d9e4"
+    },
+    {
+      "key": "fastapi-reviewer",
+      "path": "agents/fastapi-reviewer.md",
+      "blob_sha": "f4c79b95c238085e777fa10b154dd6e6c5cb2a10"
+    },
+    {
+      "key": "flutter-reviewer",
+      "path": "agents/flutter-reviewer.md",
+      "blob_sha": "2d8abef302080d15547eb1a1b166dbf8eed7051a"
+    },
+    {
+      "key": "fsharp-reviewer",
+      "path": "agents/fsharp-reviewer.md",
+      "blob_sha": "9628c328e0e2ca8e203fc946423753adb4ec47a7"
+    },
+    {
+      "key": "gan-evaluator",
+      "path": "agents/gan-evaluator.md",
+      "blob_sha": "0c3c0c9ee06ba7e19d95f1aff15a4d7644d559da"
+    },
+    {
+      "key": "gan-generator",
+      "path": "agents/gan-generator.md",
+      "blob_sha": "af0c577ff3180a85e051441914d8da22fde6eeb7"
+    },
+    {
+      "key": "gan-planner",
+      "path": "agents/gan-planner.md",
+      "blob_sha": "57a018249a89523032f2997e54457ed89fb08c86"
+    },
+    {
+      "key": "gdscript-reviewer",
+      "path": "agents/gdscript-reviewer.md",
+      "blob_sha": "80cfdbd1658f4d2affd0d7450fa11e64584948d3"
+    },
+    {
+      "key": "go-build-resolver",
+      "path": "agents/go-build-resolver.md",
+      "blob_sha": "b3dbe383b4f2d6407a5f136c1a58678568330da2"
+    },
+    {
+      "key": "go-reviewer",
+      "path": "agents/go-reviewer.md",
+      "blob_sha": "72dc7654ae34325cb6af2340ba752c450e8aae16"
+    },
+    {
+      "key": "harmonyos-app-resolver",
+      "path": "agents/harmonyos-app-resolver.md",
+      "blob_sha": "ef52fd09de9a9acb33d5b978517addb0f06a28d6"
+    },
+    {
+      "key": "harness-optimizer",
+      "path": "agents/harness-optimizer.md",
+      "blob_sha": "cdb09e31d43349a108476a449bd24d2106b3a6fc"
+    },
+    {
+      "key": "healthcare-reviewer",
+      "path": "agents/healthcare-reviewer.md",
+      "blob_sha": "187079ca75367173457be39913b8765d4447659f"
+    },
+    {
+      "key": "homelab-architect",
+      "path": "agents/homelab-architect.md",
+      "blob_sha": "608d59eb301162be6c9fa6f6b9a0179839bd04dd"
+    },
+    {
+      "key": "java-build-resolver",
+      "path": "agents/java-build-resolver.md",
+      "blob_sha": "ba638dd07208f38df6fef1a0ae86abec69699359"
+    },
+    {
+      "key": "java-reviewer",
+      "path": "agents/java-reviewer.md",
+      "blob_sha": "fbe19bf40d8e69954173af9ae545e3c6490e7da5"
+    },
+    {
+      "key": "kotlin-build-resolver",
+      "path": "agents/kotlin-build-resolver.md",
+      "blob_sha": "45315270f13e4fd2369c376d75dbe3ae7959771a"
+    },
+    {
+      "key": "kotlin-reviewer",
+      "path": "agents/kotlin-reviewer.md",
+      "blob_sha": "95ed8a2c32f8ba2f4bdca8cb4f2d772d92ef263a"
+    },
+    {
+      "key": "loop-operator",
+      "path": "agents/loop-operator.md",
+      "blob_sha": "4da0665eb5ae3f8dd5712005b9de3583d907769b"
+    },
+    {
+      "key": "marketing-agent",
+      "path": "agents/marketing-agent.md",
+      "blob_sha": "adf46403e2b5acd0143d2f2eb9fea17ba5c460dc"
+    },
+    {
+      "key": "mle-reviewer",
+      "path": "agents/mle-reviewer.md",
+      "blob_sha": "9b5c8d55a56ed77167ea2d4f4a32d3f6e19f278f"
+    },
+    {
+      "key": "network-architect",
+      "path": "agents/network-architect.md",
+      "blob_sha": "181fc473a94d2a8c29c365573c12b0d449f4e74a"
+    },
+    {
+      "key": "network-config-reviewer",
+      "path": "agents/network-config-reviewer.md",
+      "blob_sha": "1362f47015c80626ceda49b561d8975b2240318c"
+    },
+    {
+      "key": "network-troubleshooter",
+      "path": "agents/network-troubleshooter.md",
+      "blob_sha": "4bd666026de7009175bc521a8b3042aeae800ca8"
+    },
+    {
+      "key": "opensource-forker",
+      "path": "agents/opensource-forker.md",
+      "blob_sha": "b2c07103b6d072600a4ebba04a79cfd4a8ef7e67"
+    },
+    {
+      "key": "opensource-packager",
+      "path": "agents/opensource-packager.md",
+      "blob_sha": "e6e24199dc2a21f01f5ae370fba48bf27ac97185"
+    },
+    {
+      "key": "opensource-sanitizer",
+      "path": "agents/opensource-sanitizer.md",
+      "blob_sha": "c61e1de4aa38aebb82c7fe596658cfc31c15b41f"
+    },
+    {
+      "key": "performance-optimizer",
+      "path": "agents/performance-optimizer.md",
+      "blob_sha": "4d5de6f963600ce606020caa70f1ae7cc2ad9aad"
+    },
+    {
+      "key": "php-reviewer",
+      "path": "agents/php-reviewer.md",
+      "blob_sha": "af90974fcf23ffb2936047f71d3fab0954a0547f"
+    },
+    {
+      "key": "planner",
+      "path": "agents/planner.md",
+      "blob_sha": "e9e282f54d5ea8dbecae31d00c8647960c089f05"
+    },
+    {
+      "key": "pr-test-analyzer",
+      "path": "agents/pr-test-analyzer.md",
+      "blob_sha": "07bf41ebda6590a73a274e4598e3a00dc654a919"
+    },
+    {
+      "key": "python-reviewer",
+      "path": "agents/python-reviewer.md",
+      "blob_sha": "b1b3ee6f53dfb21f1d97b70f4ba5be17a142e11f"
+    },
+    {
+      "key": "pytorch-build-resolver",
+      "path": "agents/pytorch-build-resolver.md",
+      "blob_sha": "88f567968a3058aa1a6828fc2d32fa83681bdfe9"
+    },
+    {
+      "key": "rag-pipeline-reviewer",
+      "path": "agents/rag-pipeline-reviewer.md",
+      "blob_sha": "eb5ef7be6aa642a68df03ee9a2f3d3d4cf96881c"
+    },
+    {
+      "key": "react-build-resolver",
+      "path": "agents/react-build-resolver.md",
+      "blob_sha": "ecfa77e0f3a9c277d4bc22b1651322242be738db"
+    },
+    {
+      "key": "react-reviewer",
+      "path": "agents/react-reviewer.md",
+      "blob_sha": "b25b79e7110d22d15587cd7296947de289eec006"
+    },
+    {
+      "key": "refactor-cleaner",
+      "path": "agents/refactor-cleaner.md",
+      "blob_sha": "093c8f6478052f3cc78072204fca957ffac82f07"
+    },
+    {
+      "key": "ruby-reviewer",
+      "path": "agents/ruby-reviewer.md",
+      "blob_sha": "cea2dbef1119e2587f7f461ef71510c3f3d4d783"
+    },
+    {
+      "key": "rust-build-resolver",
+      "path": "agents/rust-build-resolver.md",
+      "blob_sha": "552d267cd5eeed414014eab340935598ff7ff1f8"
+    },
+    {
+      "key": "rust-reviewer",
+      "path": "agents/rust-reviewer.md",
+      "blob_sha": "380fb0d9fb3753fcdb7f8b80343a35e9fd6cbe8d"
+    },
+    {
+      "key": "security-reviewer",
+      "path": "agents/security-reviewer.md",
+      "blob_sha": "b5c5e38d2d8c389650162afe18cfe3ab24f353ad"
+    },
+    {
+      "key": "seo-specialist",
+      "path": "agents/seo-specialist.md",
+      "blob_sha": "fd127ec08b999d92f0a31a1ccf76e4b8958e7339"
+    },
+    {
+      "key": "silent-failure-hunter",
+      "path": "agents/silent-failure-hunter.md",
+      "blob_sha": "e38053453908f27687826db7b34ba5849971205b"
+    },
+    {
+      "key": "spec-miner",
+      "path": "agents/spec-miner.md",
+      "blob_sha": "f5e2e76be3d40be8c1a16a8e0b4b8b52c2b08887"
+    },
+    {
+      "key": "swift-build-resolver",
+      "path": "agents/swift-build-resolver.md",
+      "blob_sha": "5896e74e70c766747c00552ad6615fec92951583"
+    },
+    {
+      "key": "swift-reviewer",
+      "path": "agents/swift-reviewer.md",
+      "blob_sha": "c77c2b0db5bdc8faf95aa9f679c952bb0837ec11"
+    },
+    {
+      "key": "tdd-guide",
+      "path": "agents/tdd-guide.md",
+      "blob_sha": "d4f6443b8fa3b7e31d469d9b557b658f612f6077"
+    },
+    {
+      "key": "type-design-analyzer",
+      "path": "agents/type-design-analyzer.md",
+      "blob_sha": "394f2626be1bcb7ff89ba3bb042b6eed99ac6e1f"
+    },
+    {
+      "key": "typescript-reviewer",
+      "path": "agents/typescript-reviewer.md",
+      "blob_sha": "c72b2edd6acfbd3b2ed6f82241c841d359d13afa"
+    },
+    {
+      "key": "vue-reviewer",
+      "path": "agents/vue-reviewer.md",
+      "blob_sha": "137b520eea65ed529262135e0cc0299fbc2047b2"
+    }
+  ]
+}

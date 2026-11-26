@@ -1,5 +1,5 @@
 export async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts?.headers || {}) } });
   const ct = res.headers.get('content-type') || '';
   if (!ct.includes('application/json')) throw new Error('City API unavailable (unexpected response). The database may be waking up — please retry.');
   const data = await res.json().catch(() => ({}));
@@ -9,7 +9,7 @@ export async function api<T = any>(path: string, opts?: RequestInit): Promise<T>
 
 export interface Building { id: number; slug: string; name: string; purpose: string; district: string; description: string; status: string; departments: string; system_name: string; version: string; floors: number; }
 export interface Agent { id: number; name: string; code: string; role: string; department: string; building_slug: string; status: string; current_task: string; avatar_color: string; }
-export interface Task { id: number; title: string; building_slug: string; agent_name: string; status: string; progress: number; priority: string; created_at?: string; }
+export interface Task { id: number; title: string; description?: string | null; building_slug: string; agent_name: string; status: string; progress: number; priority: string; company_id?: number | null; assigned_agent_id?: number | null; deliverable_type?: string; created_at?: string; result?: string | null; error?: string | null; started_at?: string | null; completed_at?: string | null; attempts?: number; }
 export interface ActivityItem { id: number; type: string; title: string; building_slug: string; detail: string; created_at?: string; }
 export interface Post { id: number; author_name: string; author_handle: string; content: string; image_url: string; likes: number; shares: number; hashtags: string; is_draft: boolean; created_at?: string; }
 export interface CommentItem { id: number; post_id: number; author_name: string; content: string; parent_id: number | null; created_at?: string; }

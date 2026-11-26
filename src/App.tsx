@@ -93,7 +93,7 @@ function Shell() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<div className="mx-auto max-w-xl px-4 py-16 text-center"><p className="text-5xl">🏙️</p><h1 className="font-display mt-3 text-2xl font-bold text-white">This street doesn&apos;t exist (yet)</h1><p className="mt-1 text-sm text-slate-400">The address you requested is not part of Autopolis Royal.</p><Link to="/" className="mt-4 inline-block rounded-full bg-amber-400 px-5 py-2.5 text-sm font-black text-slate-950">Return to the City</Link></div>} />
         </Routes>
-        {location.pathname !== '/' && <footer className="mx-auto max-w-7xl px-4 pb-4 pt-8 text-center text-[11px] leading-relaxed text-slate-600">👑 Autopolis Royal — a living 3D AI city. Database-backed features are live via Supabase; animated citizens, agent execution, external social publishing & reach analytics are labelled Demo / Simulated / Not Connected. Built Android-first.</footer>}
+        {location.pathname !== '/' && <footer className="mx-auto max-w-7xl px-4 pb-4 pt-8 text-center text-[11px] leading-relaxed text-slate-600">👑 Autopolis Royal — a living 3D AI city. Database-backed features are live via Supabase; city animation, external social publishing & reach analytics remain Demo / Simulated / Not Connected. ECC task runs are owner-triggered text generation and require server model configuration. Built Android-first.</footer>}
       </main>
 
       {/* Mobile bottom navigation */}

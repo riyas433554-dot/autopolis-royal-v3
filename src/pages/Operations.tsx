@@ -4,25 +4,45 @@ import { AlertTriangle, Building2, Bot, ListTodo, Activity as ActIcon, Plus, Tra
 import { api, timeAgo, type Building, type Agent, type Task, type ActivityItem } from '../lib/api';
 import { Spinner, ErrorBox, Empty, PageHead, StatusDot, Badge } from '../components/ui';
 
+type Company = { id: number; name: string; building_slug?: string };
+
 export default function OperationsPage({ initialTab = 'overview' }: { initialTab?: string }) {
   const [tab, setTab] = useState(initialTab);
   const [buildings, setBuildings] = useState<Building[]>([]); const [agents, setAgents] = useState<Agent[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]); const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]); const [activity, setActivity] = useState<ActivityItem[]>([]); const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true); const [err, setErr] = useState('');
   const [taskFilter, setTaskFilter] = useState('All'); const [actFilter, setActFilter] = useState('All');
-  const [form, setForm] = useState({ title: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium' });
+  const [form, setForm] = useState({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report' });
   const [saving, setSaving] = useState(false); const [note, setNote] = useState('');
-  const load = async () => { setLoading(true); setErr(''); try { const [b, a, t, ac] = await Promise.all([api('/api/buildings'), api('/api/agents'), api('/api/tasks'), api('/api/activity')]); setBuildings(b); setAgents(a); setTasks(t); setActivity(ac); } catch (e: any) { setErr(e.message); } finally { setLoading(false); } };
+  const load = async () => { setLoading(true); setErr(''); try { const [b, a, t, ac, co] = await Promise.all([api('/api/buildings'), api('/api/agents'), api('/api/tasks'), api('/api/activity'), api('/api/companies')]); setBuildings(b); setAgents(a); setTasks(t); setActivity(ac); setCompanies(Array.isArray(co) ? co : []); } catch (e: any) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
   const bName = (s: string) => buildings.find(b => b.slug === s)?.name || s;
   const alerts = useMemo(() => [...tasks.filter(t => t.status === 'blocked').map(t => ({ id: 't' + t.id, text: `Blocked task: “${t.title}” at ${bName(t.building_slug)}`, link: '/building/' + t.building_slug })), ...agents.filter(a => a.status === 'error').map(a => ({ id: 'a' + a.id, text: `Agent ${a.name} (${a.code}) flagged with error status at ${bName(a.building_slug)}`, link: '/agents' })), ...buildings.filter(b => b.status === 'maintenance').map(b => ({ id: 'b' + b.id, text: `${b.name} is under maintenance`, link: '/building/' + b.slug }))], [tasks, agents, buildings]);
-  const createTask = async (e: React.FormEvent) => { e.preventDefault(); if (!form.title.trim()) { setNote('Task title is required.'); return; } setSaving(true); setNote(''); try { await api('/api/tasks', { method: 'POST', body: JSON.stringify(form) }); await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: 'New task created: ' + form.title, building_slug: form.building_slug, detail: `Assigned to ${form.agent_name || 'Unassigned'} · priority ${form.priority}` }) }); setForm({ title: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium' }); load(); } catch (e2: any) { setNote('Could not create task: ' + e2.message); } finally { setSaving(false); } };
+  const createTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setNote('Task title is required.'); return; }
+    setSaving(true); setNote('');
+    try {
+      const company = companies.find(item => String(item.id) === form.company_id);
+      const payload = {
+        ...form,
+        company_id: form.company_id ? Number(form.company_id) : null,
+        deliverable_type: form.deliverable_type,
+        building_slug: company?.building_slug || form.building_slug,
+      };
+      await api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) });
+      await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: 'New task created: ' + form.title, building_slug: payload.building_slug, detail: (company ? company.name + ' · ' : '') + 'Assigned to ' + (form.agent_name || 'Unassigned') + ' · ' + form.deliverable_type + ' · priority ' + form.priority }) });
+      setForm({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report' });
+      load();
+    } catch (e2: any) { setNote('Could not create task: ' + e2.message); }
+    finally { setSaving(false); }
+  };
   const updateTask = async (t: Task, patch: any, logTitle?: string) => { try { await api('/api/tasks', { method: 'PUT', body: JSON.stringify({ id: t.id, ...patch }) }); if (logTitle) await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: logTitle, building_slug: t.building_slug, detail: t.title }) }); load(); } catch (e2: any) { setNote('Update failed: ' + e2.message); } };
   const deleteTask = async (t: Task) => { try { await api('/api/tasks', { method: 'DELETE', body: JSON.stringify({ id: t.id }) }); load(); } catch (e2: any) { setNote('Delete failed: ' + e2.message); } };
   const filteredTasks = tasks.filter(t => taskFilter === 'All' || t.status === taskFilter);
   const actTypes = ['All', ...new Set(activity.map(a => a.type))];
   const filteredAct = activity.filter(a => actFilter === 'All' || a.type === actFilter);
-  const stats = [{ icon: Building2, label: 'BUILDINGS', value: buildings.length, sub: buildings.filter(b => b.status === 'operational').length + ' operational' }, { icon: Bot, label: 'AGENTS', value: agents.length, sub: agents.filter(a => a.status === 'active' || a.status === 'busy').length + ' on duty' }, { icon: ListTodo, label: 'OPEN TASKS', value: tasks.filter(t => t.status !== 'completed').length, sub: tasks.filter(t => t.status === 'completed').length + ' completed' }, { icon: AlertTriangle, label: 'ALERTS', value: alerts.length, sub: 'derived live from records' }];
+  const stats = [{ icon: Building2, label: 'BUILDINGS', value: buildings.length, sub: buildings.filter(b => b.status === 'operational').length + ' operational' }, { icon: Bot, label: 'AGENTS', value: agents.length, sub: agents.filter(a => a.status === 'active' || a.status === 'busy').length + ' on duty' }, { icon: ListTodo, label: 'OPEN TASKS', value: tasks.filter(t => !['completed', 'done'].includes(t.status)).length, sub: tasks.filter(t => ['completed', 'done'].includes(t.status)).length + ' completed' }, { icon: AlertTriangle, label: 'ALERTS', value: alerts.length, sub: 'derived live from records' }];
   const tabs = [{ id: 'overview', label: 'Overview' }, { id: 'tasks', label: `Tasks (${tasks.length})` }, { id: 'activity', label: 'Activity Feed' }, { id: 'health', label: 'Building Health' }];
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -46,25 +66,31 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
                 <p className="flex items-center gap-2 text-sm font-bold text-white"><Plus size={16} className="text-amber-400" /> Create task <span className="text-xs font-normal text-slate-500">(saved to database & logged to activity)</span></p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-4">
                   <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Task title *" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none sm:col-span-2" />
+                  <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Task details / acceptance criteria (sent to ECC agent)" rows={2} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none sm:col-span-2" />
                   <select value={form.building_slug} onChange={e => setForm({ ...form, building_slug: e.target.value })} className="rounded-xl border border-white/10 bg-[#151228] px-3 py-2.5 text-sm text-white">{buildings.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}</select>
                   <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })} className="rounded-xl border border-white/10 bg-[#151228] px-3 py-2.5 text-sm text-white">{['low', 'medium', 'high', 'critical'].map(p => <option key={p}>{p}</option>)}</select>
+                  <select value={form.company_id} onChange={e => { const company = companies.find(item => String(item.id) === e.target.value); setForm({ ...form, company_id: e.target.value, building_slug: company?.building_slug || form.building_slug, agent_name: '' }); }} className="rounded-xl border border-white/10 bg-[#151228] px-3 py-2.5 text-sm text-white"><option value="">City task (no company)</option>{companies.map(company => <option key={company.id} value={company.id}>{company.name} · #{company.id}</option>)}</select>
+                  <select value={form.deliverable_type} onChange={e => setForm({ ...form, deliverable_type: e.target.value })} className="rounded-xl border border-white/10 bg-[#151228] px-3 py-2.5 text-sm text-white">{['app','website','automation','game','ad','video','reel','anime','movie','proposal','report','design','code','other'].map(type => <option key={type} value={type}>{type.toUpperCase()} deliverable</option>)}</select>
                   <select value={form.agent_name} onChange={e => setForm({ ...form, agent_name: e.target.value })} className="rounded-xl border border-white/10 bg-[#151228] px-3 py-2.5 text-sm text-white sm:col-span-3"><option value="">Assign agent (optional)</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name} — {a.role}</option>)}</select>
                   <button disabled={saving} className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">{saving ? 'CREATING…' : 'CREATE TASK'}</button>
                 </div>
-                <p className="mt-2 text-[11px] text-slate-500">Workflow: Trigger (this form) → Input saved → Processing (status updates below) → Agent Assignment → Execution <b className="text-violet-300">simulated</b> → Verification (progress) → Output → Completion.</p>
+                <p className="mt-2 text-[11px] text-slate-500">Workflow: create city/company task → choose a matching ECC city staff or hired company agent in Agents → run the model → company result is saved as a draft deliverable for review. Publishing and payment are not automatic.</p>
               </form>
-              <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{['All', 'queued', 'in_progress', 'blocked', 'completed'].map(s => <button key={s} onClick={() => setTaskFilter(s)} className={`shrink-0 rounded-full px-3.5 py-2 text-[11px] font-bold ${taskFilter === s ? 'bg-amber-400 text-slate-950' : 'bg-white/5 text-slate-200'}`}>{s.replace('_', ' ')}</button>)}</div>
+              <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{['All', 'queued', 'running', 'in_progress', 'blocked', 'error', 'done', 'completed'].map(s => <button key={s} onClick={() => setTaskFilter(s)} className={`shrink-0 rounded-full px-3.5 py-2 text-[11px] font-bold ${taskFilter === s ? 'bg-amber-400 text-slate-950' : 'bg-white/5 text-slate-200'}`}>{s.replace('_', ' ')}</button>)}</div>
               {filteredTasks.length === 0 ? <Empty>No tasks with this status.</Empty> : <div className="space-y-2.5">{filteredTasks.map(t => (
                 <div key={t.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-white">{t.title}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${t.priority === 'critical' ? 'bg-red-500/20 text-red-300' : t.priority === 'high' ? 'bg-orange-500/20 text-orange-300' : 'bg-white/10 text-slate-300'}`}>{t.priority.toUpperCase()}</span><span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-300"><StatusDot status={t.status} />{t.status.replace('_', ' ')}</span></div>
                   <p className="mt-1 text-xs text-slate-400">📍 <Link to={'/building/' + t.building_slug} className="text-amber-300 underline">{bName(t.building_slug)}</Link> · Owner: {t.agent_name} · Created {timeAgo(t.created_at)}</p>
+                  {t.description && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{t.description}</p>}
                   <div className="mt-2.5 flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all" style={{ width: t.progress + '%' }} /></div><span className="text-[11px] font-bold text-slate-300">{t.progress}%</span></div>
+                  {t.result && <details className="mt-2 rounded-xl border border-emerald-400/15 bg-emerald-500/5 p-3"><summary className="cursor-pointer text-xs font-bold text-emerald-200">Saved ECC agent output</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">{t.result}</pre></details>}
+                  {t.error && <p className="mt-2 rounded-xl border border-red-400/15 bg-red-500/5 p-2 text-xs text-red-200">Execution error: {t.error}</p>}
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {t.status !== 'in_progress' && t.status !== 'completed' && <button onClick={() => updateTask(t, { status: 'in_progress', progress: Math.max(t.progress, 15) })} className="rounded-full bg-sky-500/20 px-3 py-1.5 text-[11px] font-bold text-sky-200">Start</button>}
-                    {t.status === 'in_progress' && <button onClick={() => updateTask(t, { progress: Math.min(90, t.progress + 25) })} className="rounded-full bg-violet-500/20 px-3 py-1.5 text-[11px] font-bold text-violet-200">+25% progress (simulated work)</button>}
-                    {t.status !== 'blocked' && t.status !== 'completed' && <button onClick={() => updateTask(t, { status: 'blocked' })} className="rounded-full bg-red-500/20 px-3 py-1.5 text-[11px] font-bold text-red-200">Mark blocked</button>}
-                    {t.status !== 'completed' && <button onClick={() => updateTask(t, { status: 'completed', progress: 100 }, 'Task completed: ' + t.title)} className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[11px] font-bold text-emerald-200">Complete ✓</button>}
-                    <button onClick={() => deleteTask(t)} className="ml-auto flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-red-300"><Trash2 size={12} /> Delete</button>
+                    {!['queued', 'running', 'completed', 'done'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'queued', progress: 0 })} className="rounded-full bg-sky-500/20 px-3 py-1.5 text-[11px] font-bold text-sky-200">Queue for ECC execution</button>}
+                    {t.status === 'queued' && <Link to="/agents" className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[11px] font-bold text-emerald-200">Choose ECC agent & run →</Link>}
+                    {t.status !== 'blocked' && !['completed', 'done', 'error', 'running'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'blocked' })} className="rounded-full bg-red-500/20 px-3 py-1.5 text-[11px] font-bold text-red-200">Mark blocked</button>}
+                    {!['completed', 'done', 'running'].includes(t.status) && <button onClick={() => updateTask(t, { status: 'completed', progress: 100 }, 'Task manually completed: ' + t.title)} className="rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-200">Mark complete manually</button>}
+                    {t.status !== 'running' && <button onClick={() => deleteTask(t)} className="ml-auto flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:text-red-300"><Trash2 size={12} /> Delete</button>}
                   </div>
                 </div>))}</div>}
             </div>
@@ -78,7 +104,7 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
           )}
 
           {tab === 'health' && (
-            <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">{buildings.map(b => { const bt = tasks.filter(t => t.building_slug === b.slug); const blocked = bt.filter(t => t.status === 'blocked').length; return <Link key={b.slug} to={'/building/' + b.slug} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 hover:border-amber-400/50"><p className="flex items-center gap-2 text-sm font-bold text-white"><StatusDot status={b.status} />{b.name}</p><p className="mt-1 text-[11px] text-slate-400">{b.status} · {agents.filter(a => a.building_slug === b.slug).length} agents · {bt.filter(t => t.status !== 'completed').length} open tasks{blocked ? ` · ⚠ ${blocked} blocked` : ''}</p><p className="mt-1 text-[10px] text-slate-500">Health = database status field only. No uptime/latency monitoring is connected.</p></Link>; })}</div>
+            <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">{buildings.map(b => { const bt = tasks.filter(t => t.building_slug === b.slug); const blocked = bt.filter(t => t.status === 'blocked').length; return <Link key={b.slug} to={'/building/' + b.slug} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 hover:border-amber-400/50"><p className="flex items-center gap-2 text-sm font-bold text-white"><StatusDot status={b.status} />{b.name}</p><p className="mt-1 text-[11px] text-slate-400">{b.status} · {agents.filter(a => a.building_slug === b.slug).length} agents · {bt.filter(t => !['completed', 'done'].includes(t.status)).length} open tasks{blocked ? ` · ⚠ ${blocked} blocked` : ''}</p><p className="mt-1 text-[10px] text-slate-500">Health = database status field only. No uptime/latency monitoring is connected.</p></Link>; })}</div>
           )}
         </>
       )}

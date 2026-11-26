@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { BUILDING_GEO, BUILDING_META, DISTRICT_COLORS } from '../lib/cityConfig';
-import type { Building } from '../lib/api';
+import type { Agent, Building } from '../lib/api';
 
 interface Props {
   buildings: Building[];
+  agents: Agent[];
   selectedSlug: string | null;
   onSelect: (slug: string | null) => void;
   night: boolean;
@@ -24,6 +25,19 @@ function makeWindowTexture(): THREE.Texture {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 
+function makeAgentLabel(name: string, role: string): THREE.Sprite {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(7,12,28,0.94)'; g.beginPath(); g.roundRect(18, 8, 476, 112, 24); g.fill();
+  g.strokeStyle = 'rgba(75,210,255,0.95)'; g.lineWidth = 4; g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 8;
+  g.fillStyle = '#fff4cf'; g.font = 'bold 34px Georgia, serif'; g.fillText(name.toUpperCase(), 256, 45, 440);
+  g.fillStyle = '#7de7ff'; g.font = 'bold 25px sans-serif'; g.fillText(role.toUpperCase(), 256, 88, 440);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+  sp.scale.set(24, 6, 1); sp.renderOrder = 1200; return sp;
+}
+
 function makeLabel(text: string): THREE.Sprite {
   const c = document.createElement('canvas'); c.width = 512; c.height = 96;
   const g = c.getContext('2d')!;
@@ -38,11 +52,12 @@ function makeLabel(text: string): THREE.Sprite {
   sp.scale.set(20, 3.75, 1); return sp;
 }
 
-export default function City3D({ buildings, selectedSlug, onSelect, night, reduced, focusSlug, resetSignal }: Props) {
+export default function City3D({ buildings, agents, selectedSlug, onSelect, night, reduced, focusSlug, resetSignal }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<any>(null);
   const propsRef = useRef({ night, reduced, selectedSlug });
   propsRef.current = { night, reduced, selectedSlug };
+  useEffect(() => { if (stateRef.current) stateRef.current.setAgents(agents); }, [agents]);
   const nameBySlug = useRef<Record<string, string>>({});
   buildings.forEach(b => { nameBySlug.current[b.slug] = b.name; });
 
@@ -378,6 +393,7 @@ export default function City3D({ buildings, selectedSlug, onSelect, night, reduc
     };
 
     const labelSprites: { s: THREE.Sprite; slug: string; x: number; y: number; z: number }[] = [];
+    const agentSprites: { s: THREE.Sprite; marker: THREE.Group; slug: string; x: number; y: number; z: number; baseY: number; agent: Agent }[] = [];
     BUILDING_GEO.forEach(geo => {
       const g = buildShape(geo);
       g.position.set(geo.x, 0, geo.z);
@@ -418,7 +434,7 @@ export default function City3D({ buildings, selectedSlug, onSelect, night, reduc
     for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), lantMat); s.position.set(84 + Math.random() * 16, 3 + Math.random() * 5, -80 + Math.random() * 160); s.userData.phase = Math.random() * 6.28; scene.add(s); lanterns.push(s); }
     const birds: THREE.Group[] = [];
     const birdMat = new THREE.MeshBasicMaterial({ color: 0x1a2030 });
-    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.42), birdMat); w1.position.x = -0.8; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 0.8; w2.name = 'wingR'; bg2.add(w1, w2); bg2.userData.r = 55 + i * 9; bg2.userData.h = 52 + (i % 3) * 7; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
+    for (let i = 0; i < 6; i++) { const bg2 = new THREE.Group(); const w1 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 0.42), birdMat); w1.position.x = -1.05; w1.name = 'wingL'; const w2 = w1.clone(); w2.position.x = 1.05; w2.name = 'wingR'; bg2.add(w1, w2); bg2.scale.setScalar(1.9); bg2.userData.r = 36 + i * 6; bg2.userData.h = 42 + (i % 3) * 5; bg2.userData.ph = i * 1.05; scene.add(bg2); birds.push(bg2); }
 
     // Camera orbit state (starts wide → eased intro fly-over into the default view)
     const cam = { theta: 0.12, phi: 0.6, radius: 268, tx: 0, tz: 0, dTheta: 0.7, dPhi: 0.92, dRadius: 178, dTx: 0, dTz: 0 };
@@ -449,15 +465,65 @@ export default function City3D({ buildings, selectedSlug, onSelect, night, reduc
     const onWheel = (e: WheelEvent) => { e.preventDefault(); cam.dRadius = THREE.MathUtils.clamp(cam.dRadius + e.deltaY * 0.09, 26, 280); };
     el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove); el.addEventListener('pointerup', onUp); el.addEventListener('pointercancel', onUp); el.addEventListener('wheel', onWheel, { passive: false });
 
-    const resize = () => { const w = mount.clientWidth, h = mount.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+    let mobileFrameApplied = false;
+    const resize = () => {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      if (!w || !h) return;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      const mobile = w / h < 0.78;
+      camera.fov = mobile ? 58 : 52;
+      camera.updateProjectionMatrix();
+      // One-time mobile framing adjustment only; preserve the intro fly-over/easing.
+      if (mobile && !mobileFrameApplied) {
+        cam.dRadius = Math.max(cam.dRadius, 194);
+        cam.dPhi = Math.min(cam.dPhi, 0.88);
+        mobileFrameApplied = true;
+      }
+    };
     resize(); const ro = new ResizeObserver(resize); ro.observe(mount);
 
     stateRef.current = {
-      focusOn: (slug: string | null) => { if (!slug) return; const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) return; cam.dTx = geo.x; cam.dTz = geo.z; cam.dRadius = Math.max(38, geo.h * 2.4); cam.dPhi = 0.95; },
-      resetCam: () => { cam.dTheta = 0.7; cam.dPhi = 0.92; cam.dRadius = 178; cam.dTx = 0; cam.dTz = 0; },
-      setSelected: (slug: string | null) => { labelSprites.forEach(l => { const m = l.s.material as THREE.SpriteMaterial; const sel2 = l.slug === slug; m.depthTest = !sel2; l.s.renderOrder = sel2 ? 999 : 0; m.color.set(sel2 ? 0xffd75e : 0xffffff); }); const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) { ring.visible = false; return; } ring.visible = true; ring.position.x = geo.x; ring.position.z = geo.z; const r = Math.max(geo.w, geo.d) * 0.78 + 3; ring.scale.set(r, r, 1); },
+      focusOn: (slug: string | null) => {
+        if (!slug) return;
+        const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) return;
+        const mobile = mount.clientWidth / Math.max(1, mount.clientHeight) < 0.78;
+        cam.dTx = geo.x; cam.dTz = geo.z;
+        cam.dRadius = Math.max(38, geo.h * 2.4) * (mobile ? 1.16 : 1);
+        cam.dPhi = mobile ? 0.88 : 0.95;
+      },
+      resetCam: () => {
+        const mobile = mount.clientWidth / Math.max(1, mount.clientHeight) < 0.78;
+        cam.dTheta = 0.7; cam.dPhi = mobile ? 0.88 : 0.92; cam.dRadius = mobile ? 194 : 178; cam.dTx = 0; cam.dTz = 0;
+      },
+      setSelected: (slug: string | null) => { labelSprites.forEach(l => { const m = l.s.material as THREE.SpriteMaterial; const sel2 = l.slug === slug; m.depthTest = !sel2; l.s.renderOrder = sel2 ? 2000 : 0; m.color.set(sel2 ? 0xffd75e : 0xffffff); }); agentSprites.forEach(a => { const selectedAgentBuilding = a.slug === slug; (a.s.material as THREE.SpriteMaterial).opacity = selectedAgentBuilding ? 1 : 0.88; a.marker.scale.setScalar(selectedAgentBuilding ? 1.22 : 1); }); const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) { ring.visible = false; return; } ring.visible = true; ring.position.x = geo.x; ring.position.z = geo.z; const r = Math.max(geo.w, geo.d) * 0.78 + 3; ring.scale.set(r, r, 1); },
+      setAgents: (list: Agent[]) => {
+        agentSprites.forEach(a => { scene.remove(a.s); scene.remove(a.marker); (a.s.material as THREE.SpriteMaterial).map?.dispose(); (a.s.material as THREE.SpriteMaterial).dispose(); a.marker.traverse(o => { if ((o as THREE.Mesh).isMesh) { (o as THREE.Mesh).geometry.dispose(); const mat = (o as THREE.Mesh).material; if (Array.isArray(mat)) mat.forEach(m => m.dispose()); else mat.dispose(); } }); });
+        agentSprites.length = 0;
+        const byBuilding = new Map<string, Agent[]>();
+        list.forEach(agent => { if (!agent.building_slug) return; const arr = byBuilding.get(agent.building_slug) || []; arr.push(agent); byBuilding.set(agent.building_slug, arr); });
+        byBuilding.forEach((members, slug) => {
+          const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) return;
+          members.forEach((agent, index) => {
+            const col = index % 3, row = Math.floor(index / 3);
+            const x = geo.x + (col - 1) * Math.min(5, geo.w * 0.18), z = geo.z + row * 3.2;
+            const marker = new THREE.Group();
+            const ringM = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.35, 24), new THREE.MeshBasicMaterial({ color: 0x55ddff, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }));
+            ringM.rotation.x = -Math.PI / 2; ringM.position.y = 0.2; marker.add(ringM);
+            const orb = new THREE.Mesh(new THREE.SphereGeometry(0.82, 14, 10), new THREE.MeshStandardMaterial({ color: 0x55ddff, emissive: 0x087ea4, emissiveIntensity: 1.2, metalness: 0.35, roughness: 0.22 }));
+            orb.position.y = 1.25; marker.add(orb);
+            marker.position.set(x, geo.h + 3 + row * 2.2, z); marker.renderOrder = 1100; scene.add(marker);
+            const s = makeAgentLabel(agent.name || agent.code || 'Agent', agent.role || agent.department || 'AI Agent');
+            const baseY = marker.position.y + 11;
+            s.position.set(x, baseY, z); scene.add(s);
+            agentSprites.push({ s, marker, slug, x, y: baseY, z, baseY, agent });
+          });
+        });
+        stateRef.current?.setSelected(propsRef.current.selectedSlug);
+      },
     };
     stateRef.current.setSelected(propsRef.current.selectedSlug);
+    stateRef.current.setAgents(agents);
 
     const dawnTop = new THREE.Color(0x35569e), dawnBot = new THREE.Color(0xcfe0f5), nightTop = new THREE.Color(0x02040f), nightBot = new THREE.Color(0x14306e);
     const dawnFog = new THREE.Color(0xa8c2e8), nightFog = new THREE.Color(0x0a1730), warmSun = new THREE.Color(0xfff2d8), moonSun = new THREE.Color(0x9db8ff);
@@ -479,18 +545,71 @@ export default function City3D({ buildings, selectedSlug, onSelect, night, reduc
       jets.forEach((j, i) => { j.scale.y = 1 + Math.sin(t * 2.2 + i * 1.3) * 0.14; j.rotation.y = t * (0.8 + i * 0.15); });
       groups.forEach(g => { g.traverse(o => { if (o.name === 'beacon') o.visible = Math.sin(t * 3) > -0.2; if (o.name === 'orb') { if (o.userData.baseY === undefined) o.userData.baseY = o.position.y; o.position.y = o.userData.baseY + Math.sin(t * 1.3 + o.id) * 0.22; } if (o.name === 'ring') o.rotation.z = t * 0.5; if (o.name === 'spinY') o.rotation.y = t * 1.2; if (o.name === 'onair') (o as THREE.Mesh).visible = Math.sin(t * 2) > -0.6; if (o.name === 'beamPivot') { o.rotation.y = t * 0.45; } }); });
       lanterns.forEach((s, i) => { s.visible = !P.reduced && nightMix > 0.15; if (s.visible) { s.position.y += Math.sin(t * 0.8 + s.userData.phase) * 0.006; s.position.x += Math.sin(t * 0.3 + i) * 0.004; } });
-      birds.forEach((bg2, i) => { bg2.visible = !P.reduced; if (!bg2.visible) return; const a = t * 0.05 + bg2.userData.ph; bg2.position.set(Math.cos(a) * bg2.userData.r, bg2.userData.h + Math.sin(t * 0.7 + i) * 1.6, Math.sin(a) * bg2.userData.r); bg2.rotation.y = -a; const wl = bg2.getObjectByName('wingL'), wr = bg2.getObjectByName('wingR'); const flap = Math.sin(t * 6 + i * 1.7) * 0.45; if (wl) wl.rotation.z = flap; if (wr) wr.rotation.z = -flap; });
-      // Labels: screen-size clamp (no giants), distance fade, nearest-only when zoomed in, selected always clear
+      birds.forEach((bg2, i) => { bg2.visible = !P.reduced; if (!bg2.visible) return; const a = t * 0.05 + bg2.userData.ph; bg2.position.set(Math.cos(a) * bg2.userData.r, bg2.userData.h + Math.sin(t * 0.7 + i) * 1.6, Math.sin(a) * bg2.userData.r); bg2.rotation.y = -a; const wl = bg2.getObjectByName('wingL'), wr = bg2.getObjectByName('wingR'); const flap = Math.sin(t * 4.8 + i * 1.7) * 0.6; if (wl) wl.rotation.z = flap; if (wr) wr.rotation.z = -flap; });
+      // Unified screen-space layout: selected building, its agents, active agents, then other labels.
+      const occupiedLabels: { x: number; y: number; hw: number; hh: number }[] = [];
+      const labelItems: {
+        kind: 'agent' | 'building'; sprite: THREE.Sprite; slug: string;
+        x: number; y: number; z: number; dist: number; priority: number;
+        agentEntry?: (typeof agentSprites)[number];
+        buildingEntry?: (typeof labelSprites)[number];
+      }[] = [];
+      for (const a of agentSprites) {
+        const dx = camera.position.x - a.x, dy = camera.position.y - a.baseY, dz = camera.position.z - a.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const working = a.agent.status === 'active' || a.agent.status === 'busy';
+        labelItems.push({ kind: 'agent', sprite: a.s, slug: a.slug, x: a.x, y: a.baseY, z: a.z, dist, priority: a.slug === P.selectedSlug ? 1 : working ? 2 : 3, agentEntry: a });
+      }
       for (const l of labelSprites) {
         const dx = camera.position.x - l.x, dy = camera.position.y - l.y, dz = camera.position.z - l.z;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        const sel = l.slug === P.selectedSlug;
-        const inRange = dist < (cam.radius < 100 ? 135 : 320);
-        l.s.visible = sel || inRange;
-        if (!l.s.visible) continue;
-        const sc = THREE.MathUtils.clamp(dist * 0.085, 7.5, sel ? 30 : 24) * (sel ? 1.15 : 1);
-        l.s.scale.set(sc, sc * 0.1875, 1);
-        (l.s.material as THREE.SpriteMaterial).opacity = sel ? 1 : THREE.MathUtils.clamp(1.3 - dist / 270, 0.3, 0.95);
+        const selected = l.slug === P.selectedSlug;
+        const inRange = dist < (cam.radius < 100 ? 135 : 185);
+        l.s.visible = selected || inRange;
+        if (l.s.visible) labelItems.push({ kind: 'building', sprite: l.s, slug: l.slug, x: l.x, y: l.y, z: l.z, dist, priority: selected ? 0 : 4, buildingEntry: l });
+      }
+      labelItems.sort((a, b) => a.priority - b.priority || a.dist - b.dist);
+      const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+      for (const item of labelItems) {
+        const isAgent = item.kind === 'agent';
+        const selected = item.slug === P.selectedSlug;
+        const sc = isAgent
+          ? THREE.MathUtils.clamp(item.dist * 0.085, 8, 22)
+          : THREE.MathUtils.clamp(item.dist * 0.085, 7.5, selected ? 30 : 24) * (selected ? 1.15 : 1);
+        const labelAspect = isAgent ? 0.25 : 0.1875;
+        item.sprite.scale.set(sc, sc * labelAspect, 1);
+        const maxAttempts = isAgent ? 32 : selected ? 24 : 10;
+        const stepY = isAgent ? 4.2 : 3.6;
+        const safeDist = Math.max(1, item.dist);
+        const halfW = THREE.MathUtils.clamp(sc / (2 * safeDist * tanHalfFov * Math.max(camera.aspect, 0.4)), 0.025, 0.48);
+        const halfH = THREE.MathUtils.clamp((sc * labelAspect) / (2 * safeDist * tanHalfFov), 0.018, 0.22);
+        let projected = new THREE.Vector3();
+        let placed = false;
+        for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+          item.sprite.position.set(item.x, item.y + attempt * stepY, item.z);
+          projected = item.sprite.position.clone().project(camera);
+          const collides = occupiedLabels.some(p =>
+            Math.abs(p.x - projected.x) < p.hw + halfW + 0.012 &&
+            Math.abs(p.y - projected.y) < p.hh + halfH + 0.012
+          );
+          if (!collides) { placed = true; break; }
+        }
+        if (!placed && item.kind === 'building' && !selected) {
+          item.sprite.visible = false;
+          continue;
+        }
+        item.sprite.visible = true;
+        occupiedLabels.push({ x: projected.x, y: projected.y, hw: halfW, hh: halfH });
+        if (item.agentEntry) {
+          const a = item.agentEntry;
+          const working = a.agent.status === 'active' || a.agent.status === 'busy';
+          (item.sprite.material as THREE.SpriteMaterial).opacity = selected ? 1 : working ? 0.96 : 0.86;
+          a.marker.visible = !P.reduced;
+          a.marker.position.y = a.baseY - 11;
+          a.marker.scale.setScalar(selected ? 1.22 : 1);
+        } else if (item.buildingEntry) {
+          (item.sprite.material as THREE.SpriteMaterial).opacity = selected ? 1 : THREE.MathUtils.clamp(1.3 - item.dist / 270, 0.3, 0.95);
+        }
       }
       if (ring.visible) { const s = 1 + Math.sin(t * 3) * 0.03; ring.scale.x = Math.abs(ring.scale.x) * 0 + ring.userData.base || ring.scale.x; ring.material.opacity = 0.75 + Math.sin(t * 3) * 0.2; ring.rotation.z = t * 0.4; void s; }
       // Cars
