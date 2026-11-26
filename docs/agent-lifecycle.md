@@ -16,14 +16,14 @@ Autopolis will model ECC's published agent definitions as city agents. This is a
 
 - `ecc_preconfigured`: a profile sourced from a pinned ECC agent definition (not trained model weights).
 - `scratch`: a newly created Academy trainee with no ECC source.
-- On first ECC intake, split the 72 source definitions 36/36: 36 go to Academy for training; 36 are assigned across the other city buildings for interviews, hiring, and support duties. Keep the exact deterministic split in the importer so it never reshuffles on refresh.
+- On first ECC intake, split the 72 source definitions into **35 Academy trainees and 37 city staff**. The first 35 manifest entries go to Academy; the remaining 37 are assigned one-to-one to the 37 city buildings (excluding `agent-academy`) in deterministic slug order. The importer must reject the import if fewer than 37 city buildings exist. Keep this exact deterministic split so it never reshuffles on refresh.
 - The ECC half deployed to buildings starts as city staff; it can conduct interview/hiring/support work. Do not treat those as company-hired worker slots unless explicitly hired.
 - Do not download or execute ECC scripts/hooks as part of roster import. Import only reviewed Markdown agent metadata/instructions.
 
 ## State progression
 
 ```text
-ECC definitions ── pinned import ──> split 36 Academy / 36 city staff
+ECC definitions ── pinned import ──> split 35 Academy / 37 city staff
 Scratch agent ────────────────────> Academy
 
 Academy training/pass ──> interview/hire eligibility ──> Company (max 2 active members)
@@ -51,7 +51,7 @@ A failure returns the agent to Academy; it does not delete the agent. Training c
 - Mistake threshold: 10.
 - Per-cycle mistakes reset when a new cycle starts; lifetime mistakes remain cumulative.
 - Training level increments after each company expulsion and never decreases.
-- ECC 72 split is deterministic 36/36.
+- ECC 72 split is deterministic: 35 Academy + 37 city staff (one staff member per city building).
 
 These are defaults, not final owner-approved balance settings. Keep them configurable in the lifecycle service, not hard-coded in UI.
 
@@ -67,7 +67,7 @@ These are defaults, not final owner-approved balance settings. Keep them configu
 
 After the three timestamped migrations are applied and the Render service has the private environment variable `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`, the owner can trigger the metadata-only import with an authenticated POST to `/api/eccimport`. Keep the token private; never paste it into chat or commit it. The endpoint fetches only the pinned `agents/*.md` files, parses their frontmatter, and calls the transactional Supabase RPC. It does not execute ECC scripts/hooks.
 
-The first import is deterministic: manifest order alternates 36 definitions into Academy and 36 into city staff, with city staff round-robin across existing buildings except `agent-academy`. Repeated imports update source metadata and preserve lifecycle status, score, level, mistakes, and assignments. Do not call the endpoint until the migration and secret are configured.
+The first import is deterministic: the first 35 manifest definitions go to Academy; the remaining 37 go one-to-one across the 37 city buildings (excluding `agent-academy`) in slug order. Import fails before creating agents if fewer than 37 city buildings are present. Repeated imports update source metadata and preserve lifecycle status, score, level, mistakes, and assignments. Do not call the endpoint until the migration and secret are configured.
 
 ## Lifecycle API
 
