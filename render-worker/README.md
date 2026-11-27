@@ -25,7 +25,8 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
    - `VOICE_STUDIO_URL` (private/local URL; default http://127.0.0.1:3900)
    - `VOICE_STUDIO_MODEL` (required; explicitly choose a model/weights license suitable for monetized use) and optional `VOICE_STUDIO_VOICE` (default `default`)
    - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`
-   - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`, `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID`
+   - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
+   - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
 5. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`.
 
 ## API
