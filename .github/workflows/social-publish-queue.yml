@@ -1,13 +1,13 @@
 name: Social publish queue
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       batch_size:
         description: Maximum account jobs to process in this run (1-10)
         required: false
-        default: "4"
+        default: "1"
 permissions:
   contents: read
 concurrency:
@@ -21,7 +21,7 @@ jobs:
         env:
           BASE_URL: ${{ vars.AUTOPOLIS_PUBLIC_URL || 'https://autopolis-royal-v3.onrender.com' }}
           OWNER_TOKEN: ${{ secrets.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN }}
-          BATCH_SIZE: ${{ inputs.batch_size || '4' }}
+          BATCH_SIZE: ${{ inputs.batch_size || '1' }}
         run: |
           if [ -z "$OWNER_TOKEN" ]; then
             echo "::error::Set the AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN repository secret before enabling automatic social publishing."
