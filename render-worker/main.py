@@ -576,7 +576,7 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
 
 
 def _parse_srt_time(value: str) -> float:
-    match = re.fullmatch(r"(\\d{2}):(\\d{2}):(\\d{2})[,.](\\d{3})", value.strip())
+    match = re.fullmatch(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})", value.strip())
     if not match:
         raise ValueError("Invalid SRT timestamp")
     hours, minutes, seconds, millis = (int(part) for part in match.groups())
@@ -585,10 +585,10 @@ def _parse_srt_time(value: str) -> float:
 
 def _parse_srt_cues(value: str) -> list[dict]:
     cues = []
-    for block in re.split(r"\\n\\s*\\n", value.strip()):
+    for block in re.split(r"\n\s*\n", value.strip()):
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         time_line = next((line for line in lines if "-->" in line), "")
-        match = re.search(r"(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})\\s*-->\\s*(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})", time_line)
+        match = re.search(r"(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})", time_line)
         if not match:
             continue
         try:
@@ -666,7 +666,7 @@ def _detect_scene_points(source: str) -> list[float]:
         ], capture_output=True, text=True, timeout=900)
     except Exception:
         return []
-    return [float(value) for value in re.findall(r"pts_time:(\\d+(?:\\.\\d+)?)", proc.stderr)
+    return [float(value) for value in re.findall(r"pts_time:(\d+(?:\.\d+)?)", proc.stderr)
             if float(value) >= 0]
 
 
@@ -736,9 +736,9 @@ def _clip_srt_for_segment(cues: list[dict], start: float, end: float) -> str:
         if cue_end <= cue_start:
             continue
         text = str(cue["text"]).replace("-->", "→")
-        entries.append(f"{index}\\n{_seconds_to_srt(cue_start - start)} --> {_seconds_to_srt(cue_end - start)}\\n{text}\\n")
+        entries.append(f"{index}\n{_seconds_to_srt(cue_start - start)} --> {_seconds_to_srt(cue_end - start)}\n{text}\n")
         index += 1
-    return "\\n".join(entries)
+    return "\n".join(entries)
 
 
 def _render_repurpose_video(job_id: str, payload: dict, temp: str, final: str) -> dict:
@@ -795,7 +795,7 @@ def _render_repurpose_video(job_id: str, payload: dict, temp: str, final: str) -
             caption_file = os.path.join(temp, f"clip-{index:02d}.srt")
             with open(caption_file, "w", encoding="utf-8") as output:
                 output.write(clip_captions)
-            safe_caption_file = caption_file.replace("\\\\", "\\\\\\\\").replace(":", "\\\\:")
+            safe_caption_file = caption_file.replace("\\", "\\\\").replace(":", "\\:")
             filters.append("subtitles=filename=" + safe_caption_file + ":force_style='FontName=Arial,FontSize=38,Outline=2,Shadow=1,MarginV=100'")
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -811,7 +811,7 @@ def _render_repurpose_video(job_id: str, payload: dict, temp: str, final: str) -
     listing_path = os.path.join(temp, "content-studio-concat.txt")
     with open(listing_path, "w", encoding="utf-8") as listing:
         for clip_path in clip_paths:
-            listing.write("file " + json.dumps(clip_path) + "\\n")
+            listing.write("file " + json.dumps(clip_path) + "\n")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "concat", "-safe", "0", "-i", listing_path,
