@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js
       - run: node --test tests/video-renderer.test.js
       - uses: actions/setup-python@v5
         with:
