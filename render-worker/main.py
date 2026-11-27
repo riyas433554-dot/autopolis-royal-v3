@@ -249,6 +249,7 @@ def _download_studio_video(project_id: str, target: str):
 
 
 def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float, subtitle_path: str | None = None):
+    duration = max(video_duration, voice_duration)
     target_video_bps = int((MAX_VIDEO_BYTES * 0.82 * 8 / max(duration, 1)) - 160000)
     target_video_bps = max(250000, min(target_video_bps, 6000000))
     pad_video = max(0.0, voice_duration - video_duration)
