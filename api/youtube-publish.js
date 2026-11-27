@@ -156,7 +156,7 @@ export default async function handler(req, res) {
       if (error) throw error;
       job = data;
     }
-    if (!['queued', 'error'].includes(job.status)) {
+    if (!['queued', 'error', 'dispatching'].includes(job.status)) {
       return res.status(409).json({ error: 'This account publish job is already being processed' });
     }
     const { data: uploading, error: updateError } = await supabase.from('social_publish_jobs')
