@@ -18,8 +18,30 @@ export default async function handler(req, res) {
       let building_slug = typeof body.building_slug === 'string' ? body.building_slug : '';
       const agent_name = typeof body.agent_name === 'string' ? body.agent_name : '';
       const priority = ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : 'medium';
-      const deliverableTypes = ['app', 'website', 'automation', 'game', 'ad', 'video', 'reel', 'anime', 'movie', 'proposal', 'report', 'design', 'code', 'other'];
+      const deliverableTypes = ['app', 'website', 'automation', 'game', 'ad', 'video', 'reel', 'anime', 'movie', 'short', 'long_video', 'series_episode', 'cartoon', 'documentary', 'explainer', 'casual_ai', 'clip', 'proposal', 'report', 'design', 'code', 'other'];
       const deliverable_type = deliverableTypes.includes(body.deliverable_type) ? body.deliverable_type : 'report';
+      const contentModes = ['auto', 'long_form', 'short_form', 'repurpose'];
+      const content_mode = body.content_mode === undefined ? 'auto' : body.content_mode;
+      if (!contentModes.includes(content_mode)) return res.status(400).json({ error: 'content_mode must be auto, long_form, short_form, or repurpose' });
+      const content_category = typeof body.content_category === 'string' ? body.content_category.trim().slice(0, 120) : '';
+      const validTargets = ['youtube', 'youtube_shorts', 'facebook', 'facebook_reels', 'instagram_reels'];
+      const defaultTargets = content_mode === 'short_form' || content_mode === 'repurpose' || ['reel', 'short', 'clip', 'casual_ai'].includes(deliverable_type)
+        ? ['youtube_shorts', 'instagram_reels', 'facebook_reels'] : ['youtube', 'facebook', 'youtube_shorts', 'instagram_reels', 'facebook_reels'];
+      const platform_targets = body.platform_targets === undefined ? defaultTargets : body.platform_targets;
+      if (!Array.isArray(platform_targets) || platform_targets.length === 0 || platform_targets.some(target => !validTargets.includes(target))) {
+        return res.status(400).json({ error: 'platform_targets must be a non-empty array of supported destinations' });
+      }
+      const source_video_task_id = body.source_video_task_id === null || body.source_video_task_id === undefined || body.source_video_task_id === ''
+        ? null : Number(body.source_video_task_id);
+      if (source_video_task_id !== null && (!Number.isSafeInteger(source_video_task_id) || source_video_task_id <= 0)) {
+        return res.status(400).json({ error: 'source_video_task_id must be a positive integer' });
+      }
+      if (content_mode === 'repurpose' && source_video_task_id === null) {
+        return res.status(400).json({ error: 'repurpose tasks require source_video_task_id' });
+      }
+      if (content_mode !== 'repurpose' && source_video_task_id !== null) {
+        return res.status(400).json({ error: 'source_video_task_id is only valid for repurpose tasks' });
+      }
       const company_id = body.company_id === null || body.company_id === undefined || body.company_id === ''
         ? null : Number(body.company_id);
       const assigned_agent_id = body.assigned_agent_id === null || body.assigned_agent_id === undefined || body.assigned_agent_id === ''
@@ -55,6 +77,10 @@ export default async function handler(req, res) {
         company_id,
         assigned_agent_id,
         deliverable_type,
+        content_mode,
+        content_category: content_category || deliverable_type,
+        platform_targets: [...new Set(platform_targets)],
+        source_video_task_id,
         status: 'queued',
         progress: 0
       }).select().single();

@@ -243,3 +243,53 @@ def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path
     assert calls[0] == ("client", "test/Kokoro", None)
     assert calls[1] == ("predict", "Hello fallback", 1.0, "af_heart", "/generate_speech")
     assert open(target, "rb").read() == b"normalized-wav"
+
+
+def test_render_contract_preserves_content_mode_freeform_category_and_targets():
+    request = main.RenderJobRequest(
+        task_id=30, title="Fantasy episode", deliverable_type="series_episode",
+        script="A long story script.", callback_url="https://autopolis.example/callback",
+        content_mode="long_form", content_category="fantasy anime",
+        platform_targets=["youtube", "facebook"],
+    )
+    payload = request.model_dump()
+    assert payload["content_mode"] == "long_form"
+    assert payload["content_category"] == "fantasy anime"
+    assert payload["platform_targets"] == ["youtube", "facebook"]
+
+
+def test_repurpose_contract_requires_source_and_valid_segments():
+    with pytest.raises(ValidationError, match="repurpose"):
+        main.RenderJobRequest(
+            task_id=31, title="Best scene", deliverable_type="clip",
+            script="Find a standout moment.", callback_url="https://autopolis.example/callback",
+            content_mode="repurpose",
+        )
+    auto_request = main.RenderJobRequest(
+        task_id=33, title="Auto best scenes", deliverable_type="clip",
+        script="Select and cut the best scenes.", callback_url="https://autopolis.example/callback",
+        content_mode="repurpose", source_task_id=30,
+    )
+    assert auto_request.clip_segments == []
+    request = main.RenderJobRequest(
+        task_id=32, title="Best scene", deliverable_type="clip",
+        script="Cut the selected scene.", callback_url="https://autopolis.example/callback",
+        content_mode="repurpose", source_task_id=30,
+        clip_segments=[{"start_seconds": 22, "end_seconds": 39, "hook": "surprise"}],
+    )
+    assert request.source_task_id == 30
+    assert request.clip_segments[0].end_seconds == 39
+
+
+def test_best_scene_selector_ranks_hook_cues_and_avoids_overlap():
+    cues = [
+        {"start": 12.0, "end": 16.0, "text": "The hidden secret was finally revealed!"},
+        {"start": 18.0, "end": 22.0, "text": "Wait, this impossible result changes everything?"},
+        {"start": 92.0, "end": 97.0, "text": "The person walks through the room."},
+    ]
+    selected = main._select_best_clip_segments(cues, duration=150.0, max_clips=2, clip_seconds=30.0)
+    assert len(selected) == 2
+    assert selected[0]["start_seconds"] < 12.0
+    assert selected[0]["end_seconds"] > 16.0
+    assert selected[1]["start_seconds"] >= selected[0]["end_seconds"] or selected[0]["start_seconds"] >= selected[1]["end_seconds"]
+    assert "hidden secret" in selected[0]["hook"].lower() or "impossible result" in selected[0]["hook"].lower()

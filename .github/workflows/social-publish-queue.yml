@@ -1,0 +1,35 @@
+name: Social publish queue
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: Maximum account jobs to process in this run (1-2)
+        required: false
+        default: "1"
+permissions:
+  contents: read
+concurrency:
+  group: autopolis-social-publish-dispatch
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch paced account publish jobs
+        env:
+          BASE_URL: ${{ vars.AUTOPOLIS_PUBLIC_URL || 'https://autopolis-royal-v3.onrender.com' }}
+          OWNER_TOKEN: ${{ secrets.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN }}
+          BATCH_SIZE: ${{ inputs.batch_size || '1' }}
+        run: |
+          if [ -z "$OWNER_TOKEN" ]; then
+            echo "::error::Set the AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN repository secret before enabling automatic social publishing."
+            exit 1
+          fi
+          curl --silent --show-error --fail-with-body \
+            --max-time 900 \
+            -X POST "$BASE_URL/api/social-publish-dispatch" \
+            -H "Authorization: Bearer $OWNER_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"batch_size\":$BATCH_SIZE}"
