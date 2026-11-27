@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote, urljoin
+from urllib.parse import quote
 
 import requests
 from fastapi import FastAPI, Header, HTTPException
