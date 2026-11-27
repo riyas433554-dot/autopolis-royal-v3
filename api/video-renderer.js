@@ -34,13 +34,13 @@ export function extractVideoNarration(result) {
 
 export function extractYoutubeTitle(result, fallback = '') {
   const text = typeof result === 'string' ? result : '';
-  const heading = /^#{1,6}\\s*(?:youtube\\s+)?title\\b[^\\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:youtube\s+)?title\b[^\n]*$/im.exec(text);
   if (!heading) return String(fallback || '').trim().slice(0, 100);
   const remainder = text.slice(heading.index + heading[0].length);
-  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   const section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder)
-    .split(/\\r?\\n/)
-    .map(line => line.replace(/^\\s*[-*]\\s*/, '').replace(/\\*\\*/g, '').trim())
+    .split(/\r?\n/)
+    .map(line => line.replace(/^\s*[-*]\s*/, '').replace(/\*\*/g, '').trim())
     .find(Boolean);
   return String(section || fallback || '').trim().slice(0, 100);
 }
