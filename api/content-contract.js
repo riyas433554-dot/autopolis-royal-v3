@@ -4,7 +4,7 @@ const TARGETS = new Set([
   'youtube', 'youtube_shorts', 'facebook', 'facebook_reels', 'instagram_reels',
 ]);
 
-const LONG_TARGETS = ['youtube', 'facebook'];
+const LONG_TARGETS = ['youtube', 'facebook', 'youtube_shorts', 'instagram_reels', 'facebook_reels'];
 const SHORT_TARGETS = ['youtube_shorts', 'instagram_reels', 'facebook_reels'];
 
 function positiveInteger(value) {
