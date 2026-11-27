@@ -146,7 +146,7 @@ export default async function handler(req, res) {
     const { error: updateError } = await supabase.from('video_render_jobs').update({
       status, video_url: videoUrl, qc_passed: true, qc_report: report,
       rendered_at: job.rendered_at || new Date().toISOString(), updated_at: new Date().toISOString(),
-      error: accountRows.length ? null : 'QC passed; no connected accounts matched direct destinations',
+      error: accountRows.length || autoRepurpose ? null : 'QC passed; no connected accounts matched direct destinations',
       ...(allPublished ? {
         provider_url: (allJobs || []).find(item => item.provider_url)?.provider_url || null,
         provider_video_id: (allJobs || []).find(item => item.provider_video_id)?.provider_video_id || null,
