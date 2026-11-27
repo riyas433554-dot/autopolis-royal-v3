@@ -45,9 +45,30 @@ export default async function handler(req, res) {
     if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     const { data: task, error: taskError } = await supabase.from('tasks')
-      .select('id,title,description,status,deliverable_type').eq('id', job.task_id).maybeSingle();
+      .select('id,title,description,status,deliverable_type,platform_targets').eq('id', job.task_id).maybeSingle();
     if (taskError) throw taskError;
     if (!task || task.status !== 'done') return res.status(409).json({ error: 'Task must be done before render callback' });
+
+    const targets = Array.isArray(task.platform_targets) && task.platform_targets.length
+      ? task.platform_targets : ['youtube', 'facebook'];
+    const wantsYouTube = targets.includes('youtube') || targets.includes('youtube_shorts');
+    if (!wantsYouTube) {
+      const { error: readyError } = await supabase.from('video_render_jobs').update({
+        status: 'ready',
+        video_url: videoUrl,
+        qc_passed: true,
+        qc_report: {
+          ...(req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {}),
+          platform_targets: targets,
+          pending_platforms: targets,
+        },
+        rendered_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        error: 'QC passed; no YouTube destination selected. Meta publishing is not yet enabled for this job.',
+      }).eq('id', job.id);
+      if (readyError) throw readyError;
+      return res.status(200).json({ ok: true, status: 'ready', pending_platforms: targets, video_url: videoUrl });
+    }
 
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
