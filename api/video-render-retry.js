@@ -19,6 +19,7 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'External video renderer is not configured' });
   }
 
+  let renderRowId = null;
   try {
     const { data: task, error: taskError } = await supabase.from('tasks')
       .select('id,title,description,status,deliverable_type,result').eq('id', taskId).maybeSingle();
@@ -47,7 +48,9 @@ export default async function handler(req, res) {
         .insert({ task_id: taskId, provider: 'external', status: 'submitting' }).select('*').single();
       if (insertError) throw insertError;
       row = inserted;
+      renderRowId = row.id;
     } else {
+      renderRowId = row.id;
       const { error: resetError } = await supabase.from('video_render_jobs').update({
         status: 'submitting', error: null, updated_at: new Date().toISOString(),
       }).eq('id', row.id);
@@ -77,7 +80,13 @@ export default async function handler(req, res) {
       video_url: latest?.provider_url || null,
     });
   } catch (error) {
-    console.error('Video render retry failed:', String(error?.message || error).slice(0, 500));
+    const message = String(error?.message || error).slice(0, 500);
+    if (renderRowId) {
+      await supabase.from('video_render_jobs').update({
+        status: 'failed', error: message, updated_at: new Date().toISOString(),
+      }).eq('id', renderRowId);
+    }
+    console.error('Video render retry failed:', message);
     return res.status(500).json({ error: 'Could not retry video render job' });
   }
 }
