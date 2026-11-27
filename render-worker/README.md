@@ -1,0 +1,54 @@
+# Autopolis GPU Render Worker
+
+This is a separately hosted bridge between Autopolis and video/narration providers. It can use the free public Hugging Face ZeroGPU Space for short clips or a private AI Video Studio daemon on a GPU host. It is a separate service, not part of the main Autopolis web process.
+
+## Engines
+
+Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as the final narration and caption service. VoiceStudio has an Android preview app with an optional Phone Speech API; enable Home → Phone speech API, then provide its private HTTPS/Tailscale/Cloudflare-tunnel URL and the bearer token in worker env. Do not expose the phone API without TLS and its token. Its local API provides OpenAI-compatible speech and transcription endpoints; the worker replaces the renderer's internal narration with VoiceStudio audio and burns captions transcribed from that exact audio. Run VoiceStudio as a separate service/container (AGPL-3.0 app license) rather than embedding or modifying it inside Autopolis. Choose a model/voice whose own license permits the intended YouTube/commercial use; model weights and voice assets are separately licensed.
+
+Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the heavy visual renderer:
+- MIT application code; Wan 2.2 TI2V-5B, Kokoro, faster-whisper and FFmpeg.
+- Documented baseline: 8 GB VRAM / 16 GB RAM; measured long-form sample took around 2.5 hours on RTX 4060 Laptop.
+- The app's backend daemon is REST on localhost:7860. The worker creates a project, queues generation, polls the project, downloads the finished MP4, compresses it under Autopolis's 100 MB upload ceiling, runs ffprobe QC, uploads to Supabase Storage, and calls Autopolis back.
+- Model licenses are separate. Use FLUX schnell for commercial output; FLUX Kontext dev is non-commercial. Check voice/model licenses for each use.
+
+## Run
+
+1. Install and start AI Video Studio on the GPU machine; keep its backend bound to localhost (7860). Install/download model weights according to its upstream docs.
+2. Install/start [VoiceStudio's headless backend](https://github.com/debpalash/VoiceStudio) on the same GPU host at localhost:3900, choose a TTS engine/model, and review the model/voice license. The default OmniVoice weights are CC-BY-NC; do not use them for monetized output without separate rights.
+3. Run this bridge on the same GPU host. The simplest Docker option is host networking (`--network host`) so the bridge can reach AI Video Studio's default `127.0.0.1:7860`; set `AI_VIDEO_STUDIO_URL` accordingly. Do not expose port 7860 publicly; the Studio API itself has no authentication. If using a normal bridge network, bind Studio only to a private interface and firewall it from the public internet.
+4. Build this container with a persistent volume mounted at `/data` and expose port 8080 over HTTPS behind a reverse proxy.
+5. Set secrets in the worker host:
+   - `VIDEO_RENDERER_TOKEN` — must match Autopolis `VIDEO_RENDERER_TOKEN`
+   - `VIDEO_RENDERER_CALLBACK_TOKEN` — must match Autopolis `VIDEO_RENDERER_CALLBACK_TOKEN`
+   - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+   - `AI_VIDEO_STUDIO_URL` (private/local URL; default http://127.0.0.1:7860)
+   - `VOICE_STUDIO_URL` (private/local URL; default http://127.0.0.1:3900)
+   - `VOICE_STUDIO_MODEL` (required for the server API; in phone mode it may be omitted to use the model selected in the VoiceStudio Android app). Choose model/weights whose license allows monetized use. Optional `VOICE_STUDIO_VOICE` (default `default`)
+   - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`, `VOICE_STUDIO_ASR_MODE=phone` for the VoiceStudio Android Phone Speech API (its ASR accepts base64 WAV chunks up to 30 seconds; worker chunks to 25 seconds and uses approximate sentence timing)
+   - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
+   - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
+6. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`. The worker requests short-lived Supabase signed upload/download URLs from Autopolis, so the Supabase service-role key stays on Autopolis and is not copied to the worker.
+
+## API
+
+- `POST /v1/jobs` accepts the contract described in `docs/video-rendering.md`; requires Bearer token and Idempotency-Key.
+- `GET /v1/jobs/{job_id}` reports queued/running/done/failed.
+- `GET /health` is a health probe.
+
+Jobs persist in SQLite. The worker processes one GPU render at a time. Failed jobs are requeued by submitting the same idempotency key again.
+
+## Costs and limits
+
+The code/models are open source/free to self-host, but a persistent GPU host is not guaranteed free. Temporary free notebook GPUs are not a reliable always-on worker. The worker caps source files at 1 GB and final uploads at 100 MB to match the current YouTube publisher. Long/high-quality outputs may need a higher limit and a corresponding publisher change.
+
+
+## VoiceStudio narration fallback
+
+VoiceStudio remains the primary narration engine. If its TTS request fails, the worker tries the public Hugging Face Space `Nymbo/Kokoro-TTS` using its Gradio `/generate_speech` API. Configure:
+- `KOKORO_HF_SPACE` (default `Nymbo/Kokoro-TTS`)
+- `KOKORO_HF_VOICE` (default `af_heart`)
+- `KOKORO_HF_SPEED` (default `1.0`)
+- optional `HF_TOKEN` if the Space requires authentication
+
+This is best-effort fallback, not a production SLA: the public Space can queue, rate-limit, change API, or become unavailable. The full narration script is sent to Hugging Face's public Space; do not use confidential scripts. Kokoro-82M weights are Apache-2.0, but hosted Space availability and the selected voice/data licenses must be checked separately before monetized publishing. If both VoiceStudio and Kokoro fail, the render job fails visibly instead of silently publishing without narration.

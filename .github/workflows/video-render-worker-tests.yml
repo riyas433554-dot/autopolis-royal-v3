@@ -1,0 +1,38 @@
+name: Video render worker tests
+on:
+  pull_request:
+    paths:
+      - "api/video-renderer.js"
+      - "api/agent-run.js"
+      - "api/video-render-callback.js"
+      - "render-worker/**"
+      - "tests/video-renderer.test.js"
+      - "supabase/migrations/*video_render*"
+  push:
+    branches: [main]
+    paths:
+      - "api/video-renderer.js"
+      - "api/agent-run.js"
+      - "api/video-render-callback.js"
+      - "render-worker/**"
+      - "tests/video-renderer.test.js"
+      - "supabase/migrations/*video_render*"
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/video-render-storage.js
+      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js api/video-render-storage.js
+      - run: node --test tests/video-renderer.test.js tests/video-render-storage.test.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r render-worker/requirements-dev.txt
+      - run: pytest -q render-worker/tests
+        env:
+          PYTHONPATH: render-worker
