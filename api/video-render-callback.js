@@ -42,6 +42,7 @@ export default async function handler(req, res) {
     if (jobError) throw jobError;
     if (!job) return res.status(404).json({ error: 'Render job not found' });
     if (job.status === 'published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
+    if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     const { data: task, error: taskError } = await supabase.from('tasks')
       .select('id,title,description,status,deliverable_type').eq('id', job.task_id).maybeSingle();
@@ -91,7 +92,7 @@ export default async function handler(req, res) {
       await supabase.from('video_render_jobs').update({
         status: 'ready', error: message, updated_at: new Date().toISOString(),
       }).eq('id', job.id);
-      return res.status(502).json({ ok: false, status: 'ready', error: message });
+      return res.status(200).json({ ok: true, status: 'ready', upload_error: message, video_url: videoUrl });
     }
 
     const published = uploadResult.job;
