@@ -1,5 +1,6 @@
 import supabase from './db-client.js';
 import { dispatchVideoRender } from './video-renderer.js';
+import { isVideoDeliverable } from './content-contract.js';
 
 function isOwner(req) {
   const token = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN;
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
     if (taskError) throw taskError;
     if (!task) return res.status(404).json({ error: 'Task not found' });
     if (task.status !== 'done') return res.status(409).json({ error: 'Task must be done before video render retry' });
-    if (!['video', 'reel', 'anime', 'movie'].includes(String(task.deliverable_type || '').toLowerCase())) {
+    if (!isVideoDeliverable(task.deliverable_type)) {
       return res.status(409).json({ error: 'Task is not a video deliverable' });
     }
     const script = typeof task.result === 'string' ? task.result : JSON.stringify(task.result || '');
