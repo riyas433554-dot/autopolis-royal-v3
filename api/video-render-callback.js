@@ -1,5 +1,4 @@
 import supabase from './db-client.js';
-import youtubePublishHandler from './youtube-publish.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -19,6 +18,21 @@ function safeMediaUrl(value) {
   return url.toString();
 }
 
+function addJob(rows, provider, accountId, task, videoUrl, format) {
+  rows.push({
+    task_id: task.id, provider, account_id: accountId, video_url: videoUrl,
+    title: String(task.title || 'Autopolis video').slice(0, 100),
+    description: String(task.description || '').slice(0, 5000),
+    privacy_status: 'public', status: 'queued', next_attempt_at: new Date().toISOString(),
+    platform_payload: {
+      format,
+      content_mode: task.content_mode || 'auto',
+      content_category: task.content_category || 'general',
+      caption: [task.title, task.description].filter(Boolean).join('\n\n').slice(0, 2200),
+    },
+  });
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -28,9 +42,7 @@ export default async function handler(req, res) {
 
   const providerJobId = String(req.body?.job_id || '').trim().slice(0, 160);
   if (!providerJobId) return res.status(400).json({ error: 'job_id is required' });
-  if (req.body?.qc_passed !== true) {
-    return res.status(422).json({ error: 'Renderer callback must confirm qc_passed=true before publication' });
-  }
+  if (req.body?.qc_passed !== true) return res.status(422).json({ error: 'Renderer callback must confirm qc_passed=true before publication' });
 
   let videoUrl;
   try { videoUrl = safeMediaUrl(req.body?.video_url); }
@@ -42,91 +54,85 @@ export default async function handler(req, res) {
     if (jobError) throw jobError;
     if (!job) return res.status(404).json({ error: 'Render job not found' });
     if (job.status === 'published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
-    if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     const { data: task, error: taskError } = await supabase.from('tasks')
-      .select('id,title,description,status,deliverable_type,platform_targets').eq('id', job.task_id).maybeSingle();
+      .select('id,title,description,status,deliverable_type,content_mode,content_category,platform_targets')
+      .eq('id', job.task_id).maybeSingle();
     if (taskError) throw taskError;
     if (!task || task.status !== 'done') return res.status(409).json({ error: 'Task must be done before render callback' });
 
     const targets = Array.isArray(task.platform_targets) && task.platform_targets.length
-      ? task.platform_targets : ['youtube', 'facebook'];
-    const wantsYouTube = targets.includes('youtube') || targets.includes('youtube_shorts');
-    if (!wantsYouTube) {
-      const { error: readyError } = await supabase.from('video_render_jobs').update({
-        status: 'ready',
-        video_url: videoUrl,
-        qc_passed: true,
-        qc_report: {
-          ...(req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {}),
-          platform_targets: targets,
-          pending_platforms: targets,
-        },
-        rendered_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        error: 'QC passed; no YouTube destination selected. Meta publishing is not yet enabled for this job.',
-      }).eq('id', job.id);
-      if (readyError) throw readyError;
-      return res.status(200).json({ ok: true, status: 'ready', pending_platforms: targets, video_url: videoUrl });
+      ? [...new Set(task.platform_targets)] : ['youtube','facebook'];
+    const accountRows = [];
+    if (targets.includes('youtube') || targets.includes('youtube_shorts')) {
+      const { data, error } = await supabase.from('connected_accounts')
+        .select('account_id,account_name').eq('provider','youtube').eq('status','connected');
+      if (error) throw error;
+      for (const account of data || []) {
+        addJob(accountRows, 'youtube', account.account_id, task, videoUrl,
+          targets.includes('youtube') ? 'youtube_video' : 'youtube_short');
+      }
+    }
+    if (targets.includes('facebook')) {
+      const { data, error } = await supabase.from('connected_accounts')
+        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
+      if (error) throw error;
+      for (const account of (data || []).filter(item => !String(item.account_id).startsWith('ig:'))) {
+        addJob(accountRows, 'facebook', account.account_id, task, videoUrl, 'facebook_video');
+      }
+    }
+    if (targets.includes('facebook_reels')) {
+      const { data, error } = await supabase.from('connected_accounts')
+        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
+      if (error) throw error;
+      for (const account of (data || []).filter(item => !String(item.account_id).startsWith('ig:'))) {
+        addJob(accountRows, 'facebook_reels', account.account_id, task, videoUrl, 'facebook_reel');
+      }
+    }
+    if (targets.includes('instagram_reels')) {
+      const { data, error } = await supabase.from('connected_accounts')
+        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
+      if (error) throw error;
+      for (const account of (data || []).filter(item => String(item.account_id).startsWith('ig:'))) {
+        addJob(accountRows, 'instagram', account.account_id, task, videoUrl, 'instagram_reel');
+      }
     }
 
-    const { data: account, error: accountError } = await supabase.from('connected_accounts')
-      .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
-    if (accountError) throw accountError;
+    let queuedCount = 0;
+    if (accountRows.length) {
+      const { data, error } = await supabase.from('social_publish_jobs')
+        .upsert(accountRows, { onConflict: 'task_id,provider,account_id', ignoreDuplicates: true })
+        .select('id');
+      if (error) throw error;
+      queuedCount = (data || []).length;
+    }
 
-    const { error: readyError } = await supabase.from('video_render_jobs').update({
-      status: account ? 'publishing' : 'ready',
-      video_url: videoUrl,
-      qc_passed: true,
-      qc_report: req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {},
-      rendered_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      error: account ? null : 'QC passed; no connected YouTube account found',
-    }).eq('id', job.id);
-    if (readyError) throw readyError;
-    if (!account) return res.status(200).json({ ok: true, status: 'ready', video_url: videoUrl });
-
-    const ownerToken = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN || '';
-    let uploadResult;
-    let uploadStatus = 500;
-    const uploadRes = {
-      status(code) { uploadStatus = code; return this; },
-      json(data) { uploadResult = data; return this; },
-      setHeader() {},
-      end() {},
+    const { data: allJobs, error: allJobsError } = await supabase.from('social_publish_jobs')
+      .select('id,status,provider_url,provider_video_id,error').eq('task_id', job.task_id);
+    if (allJobsError) throw allJobsError;
+    const pending = (allJobs || []).some(item => ['queued','dispatching','uploading'].includes(item.status));
+    const allPublished = (allJobs || []).length > 0 && (allJobs || []).every(item => item.status === 'published');
+    const status = allPublished ? 'published' : pending ? 'publishing' : 'ready';
+    const report = {
+      ...(req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {}),
+      platform_targets: targets,
+      account_publish_jobs: (allJobs || []).length,
+      queued_account_jobs: queuedCount,
+      publish_policy: 'per-account queue; paced and retried independently',
     };
-    await youtubePublishHandler({
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + ownerToken },
-      body: {
-        task_id: job.task_id,
-        account_id: account.account_id,
-        title: task.title,
-        description: task.description || '',
-        video_url: videoUrl,
-        privacy_status: 'public',
-      },
-    }, uploadRes);
-
-    if (uploadStatus < 200 || uploadStatus >= 300 || uploadResult?.ok !== true) {
-      const message = String(uploadResult?.error || 'YouTube publisher did not confirm upload').slice(0, 500);
-      await supabase.from('video_render_jobs').update({
-        status: 'ready', error: message, updated_at: new Date().toISOString(),
-      }).eq('id', job.id);
-      return res.status(200).json({ ok: true, status: 'ready', upload_error: message, video_url: videoUrl });
-    }
-
-    const published = uploadResult.job;
-    const { error: publishedError } = await supabase.from('video_render_jobs').update({
-      status: 'published',
-      provider_video_id: published?.provider_video_id || null,
-      provider_url: published?.provider_url || null,
-      published_at: new Date().toISOString(),
+    const { error: updateError } = await supabase.from('video_render_jobs').update({
+      status, video_url: videoUrl, qc_passed: true, qc_report: report,
+      rendered_at: job.rendered_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      error: null,
+      error: accountRows.length ? null : 'QC passed, but no connected accounts matched the selected destinations',
+      ...(allPublished ? {
+        provider_url: (allJobs || []).find(item => item.provider_url)?.provider_url || null,
+        provider_video_id: (allJobs || []).find(item => item.provider_video_id)?.provider_video_id || null,
+        published_at: new Date().toISOString(),
+      } : {}),
     }).eq('id', job.id);
-    if (publishedError) throw publishedError;
-    return res.status(200).json({ ok: true, status: 'published', video_url: published?.provider_url || null });
+    if (updateError) throw updateError;
+    return res.status(200).json({ ok: true, status, account_jobs: (allJobs || []).length, queued_account_jobs: queuedCount, video_url: videoUrl });
   } catch (error) {
     console.error('Video render callback failed:', String(error?.message || error).slice(0, 500));
     return res.status(500).json({ error: 'Could not finalize video render callback' });
