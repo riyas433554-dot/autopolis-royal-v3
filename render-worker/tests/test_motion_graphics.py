@@ -33,3 +33,18 @@ def test_motion_graphics_scene_plan_handles_long_script_without_overflow():
 
     assert len(scenes) == 5
     assert all(len(scene["body"]) <= 180 for scene in scenes)
+
+def test_motion_graphics_renderer_builds_five_ffmpeg_clips_and_concat(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker, "_draw_motion_graphics_card", lambda *args: None)
+    monkeypatch.setattr(worker.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    script = "One. Two. Three. Four. Five."
+
+    output = worker._render_with_motion_graphics(script, "Launch", "video", str(tmp_path))
+
+    assert output.endswith("motion-graphics-source.mp4")
+    assert len(calls) == 6
+    assert all(command[0] == "ffmpeg" for command in calls)
+    manifest = (tmp_path / "motion-graphics-clips.txt").read_text()
+    assert manifest.count("file ") == 5
+    assert "\\n" not in manifest
