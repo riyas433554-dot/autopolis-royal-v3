@@ -181,7 +181,7 @@ def _seconds_to_srt(value: float) -> str:
 
 def _phone_text_to_srt(text: str, start: float, duration: float) -> str:
     import re
-    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", text.strip()) if part.strip()]
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
     if not sentences:
         sentences = [text.strip()] if text.strip() else []
     if not sentences:
@@ -193,10 +193,10 @@ def _phone_text_to_srt(text: str, start: float, duration: float) -> str:
     for sentence in sentences:
         share = duration * len(sentence.split()) / total_words
         end = min(start + duration, cursor + max(0.8, share))
-        entries.append(f"{index}\\n{_seconds_to_srt(cursor)} --> {_seconds_to_srt(end)}\\n{sentence}\\n")
+        entries.append(f"{index}\n{_seconds_to_srt(cursor)} --> {_seconds_to_srt(end)}\n{sentence}\n")
         index += 1
         cursor = end
-    return "\\n".join(entries)
+    return "\n".join(entries)
 
 
 def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) -> str | None:
@@ -234,11 +234,11 @@ def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) 
             if text:
                 chunk_duration = min(chunk_seconds, max(0.1, duration - offset))
                 all_srt.append(_phone_text_to_srt(text, float(offset), chunk_duration))
-    captions = "\\n".join(part for part in all_srt if part).strip()
+    captions = "\n".join(part for part in all_srt if part).strip()
     if not captions:
         return None
     with open(target, "w", encoding="utf-8") as output:
-        output.write(captions + "\\n")
+        output.write(captions + "\n")
     return target
 
 
