@@ -265,6 +265,12 @@ def test_repurpose_contract_requires_source_and_valid_segments():
             script="Find a standout moment.", callback_url="https://autopolis.example/callback",
             content_mode="repurpose",
         )
+    auto_request = main.RenderJobRequest(
+        task_id=33, title="Auto best scenes", deliverable_type="clip",
+        script="Select and cut the best scenes.", callback_url="https://autopolis.example/callback",
+        content_mode="repurpose", source_task_id=30,
+    )
+    assert auto_request.clip_segments == []
     request = main.RenderJobRequest(
         task_id=32, title="Best scene", deliverable_type="clip",
         script="Cut the selected scene.", callback_url="https://autopolis.example/callback",
