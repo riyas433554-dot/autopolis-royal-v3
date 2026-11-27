@@ -11,6 +11,7 @@ export function createTaskRunner({
   let stopped = false;
   let running = false;
   let timer = null;
+  let wakeTimer = null;
   let loopPromise = null;
 
   async function tick() {
@@ -52,7 +53,12 @@ export function createTaskRunner({
         await tick();
         if (stopped) break;
         await new Promise(resolve => {
-          timer = setTimeout(resolve, intervalMs);
+          wakeTimer = resolve;
+          timer = setTimeout(() => {
+            timer = null;
+            wakeTimer = null;
+            resolve();
+          }, intervalMs);
         });
       }
     })();
@@ -63,6 +69,8 @@ export function createTaskRunner({
     stopped = true;
     if (timer) clearTimeout(timer);
     timer = null;
+    if (wakeTimer) wakeTimer();
+    wakeTimer = null;
   }
 
   return { tick, start, stop };
