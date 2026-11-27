@@ -393,6 +393,29 @@ def render_and_callback(job_id: str):
     return {"video_url": media_url, "qc_report": qc, "callback_status": callback.status_code}
 
 
+def retry_callback_for_job(job_id: str) -> dict:
+    job = get_job(job_id)
+    if not job or job["status"] != "done" or not job["result"]:
+        raise RuntimeError("Only a completed render with a stored video URL can retry its callback")
+    payload = json.loads(job["payload"])
+    result = json.loads(job["result"])
+    video_url = result.get("video_url")
+    qc_report = result.get("qc_report")
+    callback_url = check_callback_url(str(payload.get("callback_url") or ""))
+    callback_token = os.getenv("VIDEO_RENDERER_CALLBACK_TOKEN", "")
+    if not callback_token:
+        raise RuntimeError("VIDEO_RENDERER_CALLBACK_TOKEN is required on the worker")
+    response = requests.post(
+        callback_url,
+        headers={"authorization": "Bearer " + callback_token},
+        json={"job_id": job_id, "video_url": video_url, "qc_passed": True, "qc_report": qc_report or {}},
+        timeout=120,
+    )
+    if not response.ok:
+        raise RuntimeError(f"Autopolis callback retry failed with HTTP {response.status_code}: {response.text[:400]}")
+    return response.json() if response.content else {"status": "callback_accepted"}
+
+
 def process_next_job():
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as db:
@@ -458,6 +481,12 @@ def create_job(body: RenderJobRequest, authorization: str | None = Header(defaul
     payload = body.model_dump(mode="json")
     payload["callback_url"] = callback
     job_id, status = enqueue_job(idempotency_key, payload)
+    if status == "done":
+        try:
+            callback_result = retry_callback_for_job(job_id)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+        return {"job_id": job_id, "status": "done", "callback_status": callback_result.get("status")}
     return {"job_id": job_id, "status": status}
 
 
