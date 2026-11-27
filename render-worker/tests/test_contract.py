@@ -142,9 +142,9 @@ def test_zero_gpu_provider_calls_public_space_and_makes_portrait_clips(monkeypat
     class FakeClient:
         def __init__(self, space, token=None, verbose=False):
             calls.append({"space": space, "token": token})
-        def predict(self, image, prompt, ratio, duration, api_name):
+        def submit(self, image, prompt, ratio, duration, api_name):
             calls.append({"image": image, "prompt": prompt, "ratio": ratio, "duration": duration, "api_name": api_name})
-            return (str(clip), 123)
+            return type("FakeJob", (), {"result": lambda self, timeout=None: (str(clip), 123)})()
     def fake_run(args, **kwargs):
         if args[-1].endswith(".mp4"):
             open(args[-1], "wb").write(b"fake-output")
@@ -226,9 +226,9 @@ def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path
     class FakeClient:
         def __init__(self, space, token=None, verbose=False):
             calls.append(("client", space, token))
-        def predict(self, text, speed, voice, api_name):
+        def submit(self, text, speed, voice, api_name):
             calls.append(("predict", text, speed, voice, api_name))
-            return str(remote_audio)
+            return type("FakeJob", (), {"result": lambda self, timeout=None: str(remote_audio)})()
     def fake_run(args, **kwargs):
         calls.append(("ffmpeg", args))
         with open(args[-1], "wb") as output:
