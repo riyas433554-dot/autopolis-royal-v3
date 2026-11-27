@@ -73,9 +73,18 @@ begin
    where status='uploading' and updated_at < now() - interval '45 minutes';
 
   return query
-  with candidates as (
+  with ranked as (
+    select j.id,
+           row_number() over (
+             partition by j.provider, j.account_id
+             order by j.next_attempt_at, j.created_at, j.id
+           ) as account_rank
+      from public.social_publish_jobs j
+     where j.status='queued' and j.next_attempt_at <= now()
+  ), candidates as (
     select j.id, j.provider, j.account_id
       from public.social_publish_jobs j
+      join ranked r on r.id=j.id and r.account_rank=1
       left join public.social_publish_account_limits l
         on l.provider=j.provider and l.account_id=j.account_id
      where j.status='queued'
@@ -85,8 +94,9 @@ begin
        and pg_try_advisory_xact_lock(hashtextextended('account:'||j.provider||':'||j.account_id,0))
        and (j.provider <> 'youtube' or pg_try_advisory_xact_lock(hashtextextended('provider:youtube',0)))
        and (j.provider <> 'youtube' or coalesce((
-         select u.daily_count from public.social_publish_provider_daily_usage u
-          where u.provider='youtube' and u.daily_date=current_date
+         select case when u.daily_date=current_date then u.daily_count else 0 end
+           from public.social_publish_provider_daily_usage u
+          where u.provider='youtube'
        ),0) < 6)
      order by j.next_attempt_at, j.created_at, j.id
      for update of j skip locked
