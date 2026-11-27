@@ -20,7 +20,7 @@ class FakePiperVoice:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(22050)
-        wav_file.writeframes(b"\\x00\\x00\\x10\\x00\\xf0\\xff\\x20\\x00")
+        wav_file.writeframes(bytes([0, 0, 16, 0, 240, 255, 32, 0]))
 
 
 def test_voice_studio_health_is_public():
