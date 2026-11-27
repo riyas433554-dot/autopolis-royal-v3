@@ -78,7 +78,11 @@ begin
            row_number() over (
              partition by j.provider, j.account_id
              order by j.next_attempt_at, j.created_at, j.id
-           ) as account_rank
+           ) as account_rank,
+           row_number() over (
+             partition by j.provider
+             order by j.next_attempt_at, j.created_at, j.id
+           ) as provider_rank
       from public.social_publish_jobs j
      where j.status='queued' and j.next_attempt_at <= now()
   ), candidates as (
@@ -91,13 +95,13 @@ begin
        and j.next_attempt_at <= now()
        and (l.next_allowed_at is null or l.next_allowed_at <= now())
        and (l.daily_date < current_date or l.daily_count < v_daily or l.daily_date is null)
-       and pg_try_advisory_xact_lock(hashtextextended('account:'||j.provider||':'||j.account_id,0))
-       and (j.provider <> 'youtube' or pg_try_advisory_xact_lock(hashtextextended('provider:youtube',0)))
-       and (j.provider <> 'youtube' or coalesce((
+       and (j.provider <> 'youtube' or r.provider_rank <= greatest(0, 6 - coalesce((
          select case when u.daily_date=current_date then u.daily_count else 0 end
            from public.social_publish_provider_daily_usage u
           where u.provider='youtube'
-       ),0) < 6)
+       ),0)))
+       and pg_try_advisory_xact_lock(hashtextextended('account:'||j.provider||':'||j.account_id,0))
+       and (j.provider <> 'youtube' or pg_try_advisory_xact_lock(hashtextextended('provider:youtube',0)))
      order by j.next_attempt_at, j.created_at, j.id
      for update of j skip locked
      limit v_limit
