@@ -196,7 +196,7 @@ def test_autopolis_signed_upload_flow_avoids_worker_supabase_service_key(monkeyp
 
 def test_voice_studio_phone_caption_srt_has_sequential_indices_and_timing():
     srt = main._phone_text_to_srt("First sentence. Second sentence!", 25.0, 5.0, start_index=4)
-    assert srt.startswith("4\\n")
-    assert "\\n\\n5\\n" in srt
+    assert srt.startswith("4\n")
+    assert "\n\n5\n" in srt
     assert "00:00:25,000 -->" in srt
     assert "00:00:30,000" in srt
