@@ -5,6 +5,7 @@ import { buildCompanyOutput } from './company-output.js';
 import { getLlmConfig, callChatCompletion, responseText } from './llm-runtime.js';
 import { executeAgentTool } from './agent-tools.js';
 import { dispatchVideoRender } from './video-renderer.js';
+import { isVideoDeliverable } from './content-contract.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const MAX_OUTPUT_CHARS = 50000;
@@ -339,7 +340,7 @@ export default async function handler(req, res) {
     });
 
     let videoRender = null;
-    if (['video', 'reel', 'anime', 'movie'].includes(String(task.deliverable_type || '').toLowerCase())) {
+    if (isVideoDeliverable(task.deliverable_type)) {
       const publicBase = String(process.env.AUTOPOLIS_PUBLIC_URL || '').trim();
       if (!process.env.VIDEO_RENDERER_URL || !process.env.VIDEO_RENDERER_TOKEN || !publicBase) {
         videoRender = { status: 'not_configured', message: 'External render host requires VIDEO_RENDERER_URL, VIDEO_RENDERER_TOKEN, and AUTOPOLIS_PUBLIC_URL.' };
