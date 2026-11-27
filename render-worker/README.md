@@ -1,6 +1,6 @@
 # Autopolis GPU Render Worker
 
-This is a separately hosted bridge between Autopolis and the local AI Video Studio FastAPI daemon. It is designed to run on a GPU host; do not deploy it to the Autopolis Render web service.
+This is a separately hosted bridge between Autopolis and video/narration providers. It can use the free public Hugging Face ZeroGPU Space for short clips or a private AI Video Studio daemon on a GPU host. It is a separate service, not part of the main Autopolis web process.
 
 ## Engines
 
@@ -28,7 +28,7 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
    - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`
    - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
    - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
-6. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`.
+6. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`. The worker requests short-lived Supabase signed upload/download URLs from Autopolis, so the Supabase service-role key stays on Autopolis and is not copied to the worker.
 
 ## API
 
