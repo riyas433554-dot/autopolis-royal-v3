@@ -4,7 +4,7 @@ This is a separately hosted bridge between Autopolis and video/narration provide
 
 ## Engines
 
-Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as the final narration and caption service. Its local API provides OpenAI-compatible speech and transcription endpoints; the worker replaces the renderer's internal narration with VoiceStudio audio and burns captions transcribed from that exact audio. Run VoiceStudio as a separate service/container (AGPL-3.0 app license) rather than embedding or modifying it inside Autopolis. Choose a model/voice whose own license permits the intended YouTube/commercial use; model weights and voice assets are separately licensed.
+Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as the final narration and caption service. VoiceStudio has an Android preview app with an optional Phone Speech API; enable Home → Phone speech API, then provide its private HTTPS/Tailscale/Cloudflare-tunnel URL and the bearer token in worker env. Do not expose the phone API without TLS and its token. Its local API provides OpenAI-compatible speech and transcription endpoints; the worker replaces the renderer's internal narration with VoiceStudio audio and burns captions transcribed from that exact audio. Run VoiceStudio as a separate service/container (AGPL-3.0 app license) rather than embedding or modifying it inside Autopolis. Choose a model/voice whose own license permits the intended YouTube/commercial use; model weights and voice assets are separately licensed.
 
 Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the heavy visual renderer:
 - MIT application code; Wan 2.2 TI2V-5B, Kokoro, faster-whisper and FFmpeg.
@@ -25,7 +25,7 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
    - `AI_VIDEO_STUDIO_URL` (private/local URL; default http://127.0.0.1:7860)
    - `VOICE_STUDIO_URL` (private/local URL; default http://127.0.0.1:3900)
    - `VOICE_STUDIO_MODEL` (required; explicitly choose a model/weights license suitable for monetized use) and optional `VOICE_STUDIO_VOICE` (default `default`)
-   - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`
+   - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`, `VOICE_STUDIO_ASR_MODE=phone` for the VoiceStudio Android Phone Speech API (its ASR accepts base64 WAV chunks up to 30 seconds; worker chunks to 25 seconds and uses approximate sentence timing)
    - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
    - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
 6. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`. The worker requests short-lived Supabase signed upload/download URLs from Autopolis, so the Supabase service-role key stays on Autopolis and is not copied to the worker.
