@@ -157,3 +157,29 @@ test('extracts actual deliverable YouTube title and description headings', () =>
   assert.equal(extractYoutubeTitle(result, 'fallback'), 'Autopolis Royal V3 — City Task Queue Launch');
   assert.equal(extractYoutubeDescription(result, 'fallback'), 'Autopolis Royal V3 is live.\nTasks are created in a queue.');
 });
+
+test('extracts Scene time-range headers and blockquote narration', () => {
+  const result = [
+    '# Autopolis Royal V3 — Public YouTube Launch Short',
+    '',
+    '## Voiceover Script (45–60 seconds)',
+    '',
+    '**Scene 1 (0:00–0:08)**',
+    '> Tasks are created in a queue.',
+    '',
+    '**Scene 2 (0:08–0:16)**',
+    '> The runner selects eligible idle city staff or hired company agents.',
+    '',
+    '**Scene 3 (0:16–0:24)**',
+    '> Task claims use database leases.',
+    '',
+    '---',
+    '',
+    '## Scene-by-Scene Visual Plan',
+    'Do not narrate this section.',
+  ].join('\n');
+  assert.equal(
+    extractVideoNarration(result),
+    'Tasks are created in a queue.\nThe runner selects eligible idle city staff or hired company agents.\nTask claims use database leases.',
+  );
+});
