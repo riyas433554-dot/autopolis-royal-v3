@@ -407,9 +407,10 @@ def _compress_video(source: str, voice_audio: str, target: str, video_duration: 
         filters.append("subtitles=" + subtitle_path)
     video_filter = ["-vf", ",".join(filters)] if filters else []
     subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", voice_audio,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-filter_complex_threads", "1", "-i", source, "-i", voice_audio,
         "-map", "0:v:0", "-map", "1:a:0", *video_filter, "-af", "apad", "-shortest",
-        "-c:v", "libx264", "-preset", "veryfast", "-b:v", str(target_video_bps),
+        "-c:v", "libx264", "-threads:v", "1", "-preset", "ultrafast", "-b:v", str(target_video_bps),
         "-maxrate", str(target_video_bps), "-bufsize", str(target_video_bps * 2),
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", target,
