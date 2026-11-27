@@ -13,17 +13,34 @@ export function extractVideoNarration(result) {
   const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   const section = nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
   const spokenLines = [];
+  let pendingTimedLine = false;
+  const cleanSpokenLine = value => value
+    .replace(/\*\*/g, '')
+    .replaceAll(String.fromCharCode(96), '')
+    .replace(/^\s*(?:hook|opening|closing|voiceover|vo)\s*:\s*/i, '')
+    .trim();
 
   for (const line of section.split(/\r?\n/)) {
-    if (!line.trim().startsWith('|')) continue;
-    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-    if (cells.length < 2 || !/^\d{1,2}:\d{2}/.test(cells[0])) continue;
-    const spoken = cells[1]
-      .replace(/\*\*/g, '')
-      .replace(/`/g, '')
-      .replace(/^\s*(?:hook|opening|closing|voiceover|vo)\s*:\s*/i, '')
-      .trim();
-    if (spoken) spokenLines.push(spoken);
+    if (line.trim().startsWith('|')) {
+      const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+      if (cells.length < 2 || !/^\d{1,2}:\d{2}/.test(cells[0])) continue;
+      const spoken = cleanSpokenLine(cells[1]);
+      if (spoken) spokenLines.push(spoken);
+      continue;
+    }
+
+    const timed = line.match(/^\s*\*{0,2}\s*\[?(\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?)\]?\s*\*{0,2}\s*(.*?)\s*$/);
+    if (timed) {
+      const inlineSpoken = cleanSpokenLine(timed[2]);
+      if (inlineSpoken) spokenLines.push(inlineSpoken);
+      pendingTimedLine = !inlineSpoken;
+      continue;
+    }
+
+    if (!pendingTimedLine || !line.trim() || /^\s*[-—]{3,}\s*$/.test(line)) continue;
+    pendingTimedLine = false;
+    const spoken = cleanSpokenLine(line);
+    if (spoken && !/^\[(?:music|sfx|visual|end card)\b/i.test(spoken)) spokenLines.push(spoken);
   }
 
   if (!spokenLines.length) {

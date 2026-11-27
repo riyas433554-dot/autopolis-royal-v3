@@ -99,3 +99,22 @@ test('render idempotency key changes when spoken script changes', async () => {
   }
   assert.notEqual(keys[0], keys[1]);
 });
+
+test('extracts timed paragraph narration and skips music/end-card notes', () => {
+  const result = [
+    '## Voiceover Script',
+    '',
+    '**[0:00–0:05]**',
+    'Autopolis Royal V3 is live.',
+    '',
+    '**[0:05–0:12]**',
+    'Tasks are created in a queue.',
+    '',
+    '**[0:50–0:60]**',
+    '[Music sting. End card.]',
+    '',
+    '## Visual Plan',
+    'Not spoken.',
+  ].join('\n');
+  assert.equal(extractVideoNarration(result), 'Autopolis Royal V3 is live.\nTasks are created in a queue.');
+});
