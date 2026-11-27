@@ -713,6 +713,7 @@ def render_and_callback(job_id: str):
         render_source = "motion_graphics"
     else:
         raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, or motion_graphics")
+    print(f"[render-worker] task {payload.get('task_id')} provider={provider} source={render_source}", flush=True)
     if render_source == "ai_video_studio":
         word_count = len(script.split())
         is_reel = payload.get("deliverable_type") == "reel"
@@ -750,15 +751,20 @@ def render_and_callback(job_id: str):
         voice_audio = os.path.join(temp, "voicestudio-narration.wav")
         final = os.path.join(temp, "autopolis-final.mp4")
         if render_source == "hf_zerogpu":
+            print(f"[render-worker] task {payload['task_id']} generating remote ZeroGPU source", flush=True)
             source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
         elif render_source == "motion_graphics":
+            print(f"[render-worker] task {payload['task_id']} generating local motion graphics", flush=True)
             source = _render_with_motion_graphics(script, payload["title"], payload["deliverable_type"], temp)
         else:
             _download_studio_video(project_id, source)
+        print(f"[render-worker] task {payload['task_id']} source rendered; probing QC", flush=True)
         source_qc = _probe(source)
         voice_provider = "VoiceStudio"
+        print(f"[render-worker] task {payload['task_id']} starting VoiceStudio narration", flush=True)
         try:
             _generate_voice_studio_audio(script, voice_audio)
+            print(f"[render-worker] task {payload['task_id']} VoiceStudio narration complete", flush=True)
         except Exception as voice_error:
             # Preserve VoiceStudio as primary, but let a public Kokoro Space rescue narration.
             try:
@@ -776,7 +782,9 @@ def render_and_callback(job_id: str):
             subtitle_path = _transcribe_voice_studio_audio(voice_audio, os.path.join(temp, "captions.srt"))
         except Exception as caption_exc:
             caption_error = str(caption_exc)[:300]
+        print(f"[render-worker] task {payload['task_id']} compressing final MP4", flush=True)
         _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
+        print(f"[render-worker] task {payload['task_id']} final MP4 compression complete", flush=True)
         qc = _probe(final)
         qc["size_bytes"] = os.path.getsize(final)
         qc["captions_burned"] = bool(subtitle_path)
