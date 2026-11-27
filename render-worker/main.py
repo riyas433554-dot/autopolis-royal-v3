@@ -42,7 +42,7 @@ class RenderJobRequest(BaseModel):
     task_id: int = Field(gt=0)
     title: str = Field(min_length=1, max_length=100)
     description: str = Field(default='', max_length=5000)
-    deliverable_type: str = Field(min_length=1, max_length=40)
+    deliverable_type: Literal["video", "reel", "anime", "movie", "short", "long_video", "series_episode", "cartoon", "documentary", "explainer", "casual_ai", "clip"]
     script: str = Field(min_length=1, max_length=120000)
     profile: str = Field(default='cinematic', max_length=40)
     content_mode: Literal['long_form', 'short_form', 'repurpose'] = 'long_form'
