@@ -115,6 +115,6 @@ test('extracts timed paragraph narration and skips music/end-card notes', () => 
     '',
     '## Visual Plan',
     'Not spoken.',
-  ].join('\\n');
-  assert.equal(extractVideoNarration(result), 'Autopolis Royal V3 is live.\\nTasks are created in a queue.');
+  ].join('\n');
+  assert.equal(extractVideoNarration(result), 'Autopolis Royal V3 is live.\nTasks are created in a queue.');
 });
