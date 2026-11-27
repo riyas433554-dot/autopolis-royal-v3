@@ -583,12 +583,11 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
         image_path = os.path.join(temp, f"motion-card-{index:02d}.png")
         clip_path = os.path.join(temp, f"motion-card-{index:02d}.mp4")
         _draw_motion_graphics_card(image_path, title, scene, index)
-        frames = max(1, int(round(scene_seconds * fps)))
         fade_out_start = max(0.5, scene_seconds - 0.55)
         video_filter = (
             f"zoompan=z='min(zoom+0.00035,1.06)':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={frames}:s=960x540:fps={fps},"
+            f"d=1:s=960x540:fps={fps},"
             f"fade=t=in:st=0:d=0.45,"
             f"fade=t=out:st={fade_out_start:.3f}:d=0.45"
         )
