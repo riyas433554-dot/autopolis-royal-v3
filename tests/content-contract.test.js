@@ -42,7 +42,7 @@ test('repurpose requires a source task and valid clip timeline', () => {
   assert.throws(() => normalizeContentSpec({
     task: { id: 15, deliverable_type: 'reel', content_mode: 'repurpose' },
     segments: [{ start_seconds: 20, end_seconds: 10 }],
-  }), /different source task/);
+  }), /valid start\/end times/);
 });
 
 test('rejects unknown platform targets and unsupported content modes', () => {
