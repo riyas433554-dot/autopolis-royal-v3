@@ -14,7 +14,7 @@ from urllib.parse import quote, urljoin
 
 import requests
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 DB_PATH = os.getenv("RENDER_WORKER_DB", "/data/render-worker.sqlite")
 AI_STUDIO_URL = os.getenv("AI_VIDEO_STUDIO_URL", "http://127.0.0.1:7860").rstrip("/")
@@ -30,6 +30,13 @@ class RenderJobRequest(BaseModel):
     script: str = Field(min_length=1, max_length=120000)
     profile: str = Field(default="cinematic", max_length=40)
     callback_url: HttpUrl
+
+    @field_validator("title", "script")
+    @classmethod
+    def reject_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must not be blank")
+        return value
 
 
 def init_db():
@@ -180,7 +187,13 @@ def _upload_to_supabase(path: str, task_id: int, job_id: str) -> str:
     signed_path = signed.json().get("signedURL")
     if not signed_path:
         raise RuntimeError("Supabase signed URL response did not include signedURL")
-    return urljoin(base + "/", signed_path.lstrip("/"))
+    if signed_path.startswith("https://"):
+        return signed_path
+    if signed_path.startswith("/storage/v1/"):
+        return base + signed_path
+    if signed_path.startswith("/object/"):
+        return base + "/storage/v1" + signed_path
+    return base + "/storage/v1/" + signed_path.lstrip("/")
 
 
 def render_and_callback(job_id: str):
