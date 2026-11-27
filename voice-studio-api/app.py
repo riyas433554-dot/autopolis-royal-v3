@@ -1,4 +1,4 @@
-"""Lightweight Voice Studio-compatible API using MSR Voice Studio's Kitten engine."""
+"""Voice Studio-compatible API backed by the lightweight Piper ONNX CPU engine."""
 from __future__ import annotations
 
 import io
@@ -7,30 +7,17 @@ import threading
 import wave
 from typing import Literal
 
-import numpy as np
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-MODEL_ID = "KittenML/kitten-tts-mini-0.8"
-SAMPLE_RATE = 24000
+MODEL_ID = os.getenv("PIPER_VOICE_MODEL", "en_US-lessac-medium")
+MODEL_PATH = os.getenv("PIPER_VOICE_PATH", "/data/voices/en_US-lessac-medium.onnx")
 VOICE_IDS = {
-    "Bella": "expr-voice-2-f",
-    "Jasper": "expr-voice-2-m",
-    "Luna": "expr-voice-3-f",
-    "Bruno": "expr-voice-3-m",
-    "Rosie": "expr-voice-4-f",
-    "Hugo": "expr-voice-4-m",
-    "Kiki": "expr-voice-5-f",
-    "Leo": "expr-voice-5-m",
-    "expr-voice-2-f": "expr-voice-2-f",
-    "expr-voice-2-m": "expr-voice-2-m",
-    "expr-voice-3-f": "expr-voice-3-f",
-    "expr-voice-3-m": "expr-voice-3-m",
-    "expr-voice-4-f": "expr-voice-4-f",
-    "expr-voice-4-m": "expr-voice-4-m",
-    "expr-voice-5-f": "expr-voice-5-f",
-    "expr-voice-5-m": "expr-voice-5-m",
+    "Bella": MODEL_ID,
+    "default": MODEL_ID,
+    "lessac": MODEL_ID,
+    MODEL_ID: MODEL_ID,
 }
 _model = None
 _model_lock = threading.Lock()
@@ -38,7 +25,7 @@ _synthesis_lock = threading.Lock()
 
 
 class SpeechRequest(BaseModel):
-    model: str = Field(default="kitten-tts-mini-0.8", max_length=100)
+    model: str = Field(default="piper-1.8.0", max_length=100)
     input: str = Field(min_length=1, max_length=12000)
     voice: str = Field(default="Bella", max_length=80)
     response_format: Literal["wav"] = "wav"
@@ -49,46 +36,33 @@ def _get_model():
     if _model is None:
         with _model_lock:
             if _model is None:
-                from kittentts import KittenTTS
-                _model = KittenTTS(MODEL_ID)
+                from piper import PiperVoice
+                _model = PiperVoice.load(MODEL_PATH)
     return _model
-
-
-def _wav_bytes(audio) -> bytes:
-    samples = np.asarray(audio, dtype=np.float32).squeeze()
-    if samples.size == 0:
-        raise RuntimeError("Voice Studio returned empty audio")
-    samples = np.nan_to_num(samples, nan=0.0, posinf=0.0, neginf=0.0)
-    samples = np.clip(samples, -1.0, 1.0)
-    pcm = (samples * 32767.0).astype("<i2")
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as output:
-        output.setnchannels(1)
-        output.setsampwidth(2)
-        output.setframerate(SAMPLE_RATE)
-        output.writeframes(pcm.tobytes())
-    return buffer.getvalue()
 
 
 def synthesize(text: str, voice: str = "Bella") -> bytes:
     text = str(text or "").strip()
     if not text:
         raise ValueError("input text is required")
-    voice_id = VOICE_IDS.get(str(voice or "").strip())
-    if not voice_id:
-        raise ValueError("unsupported Voice Studio voice")
+    if not VOICE_IDS.get(str(voice or "").strip()):
+        raise ValueError("unsupported Voice Studio voice; use Bella/default")
+    buffer = io.BytesIO()
     with _synthesis_lock:
-        audio = _get_model().generate(text, voice=voice_id)
-    return _wav_bytes(audio)
+        _get_model().synthesize_wav(text, wave.open(buffer, "wb"))
+    audio = buffer.getvalue()
+    if len(audio) < 48 or not audio.startswith(b"RIFF") or b"WAVE" not in audio[:16]:
+        raise RuntimeError("Piper returned an invalid or empty WAV")
+    return audio
 
 
-app = FastAPI(title="Autopolis Voice Studio API", version="1.0.0")
+app = FastAPI(title="Autopolis Voice Studio API", version="1.1.0")
 
 
 @app.get("/")
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "autopolis-voice-studio", "engine": "Kitten TTS Mini", "model": MODEL_ID}
+    return {"ok": True, "service": "autopolis-voice-studio", "engine": "Piper ONNX CPU", "model": MODEL_ID}
 
 
 @app.post("/v1/audio/speech")
