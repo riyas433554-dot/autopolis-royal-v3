@@ -320,7 +320,7 @@ def _scene_prompts(script: str, limit: int = 42) -> list[str]:
     current = []
     for word in words:
         current.append(word)
-        if len(current) >= limit and word.rstrip().endswith((".", "!", "?", ";")):
+        if len(current) >= limit:
             chunks.append(" ".join(current))
             current = []
     if current:
