@@ -28,6 +28,16 @@ alter table public.social_publish_account_limits enable row level security;
 revoke all on public.social_publish_account_limits from public, anon, authenticated;
 grant select, insert, update on public.social_publish_account_limits to service_role;
 
+create table if not exists public.social_publish_provider_daily_usage (
+  provider text primary key check (provider='youtube'),
+  daily_date date not null default current_date,
+  daily_count integer not null default 0 check (daily_count >= 0),
+  updated_at timestamptz not null default now()
+);
+alter table public.social_publish_provider_daily_usage enable row level security;
+revoke all on public.social_publish_provider_daily_usage from public, anon, authenticated;
+grant select, insert, update on public.social_publish_provider_daily_usage to service_role;
+
 create or replace function public.claim_social_publish_jobs(
   p_limit integer default 4,
   p_min_interval_seconds integer default 900,
@@ -47,8 +57,6 @@ declare
   v_interval integer := greatest(60, least(coalesce(p_min_interval_seconds,900), 86400));
   v_daily integer := greatest(1, least(coalesce(p_daily_limit,6), 50));
 begin
-  -- Recover only pre-upload claims. An interrupted actual upload is not auto-retried
-  -- because the provider may have accepted it before the worker crashed.
   update public.social_publish_jobs
      set status='queued', dispatch_lease_expires_at=null,
          next_attempt_at=now(), updated_at=now(),
@@ -70,6 +78,12 @@ begin
        and j.next_attempt_at <= now()
        and (l.next_allowed_at is null or l.next_allowed_at <= now())
        and (l.daily_date < current_date or l.daily_count < v_daily or l.daily_date is null)
+       and pg_try_advisory_xact_lock(hashtextextended('account:'||j.provider||':'||j.account_id,0))
+       and (j.provider <> 'youtube' or pg_try_advisory_xact_lock(hashtextextended('provider:youtube',0)))
+       and (j.provider <> 'youtube' or coalesce((
+         select u.daily_count from public.social_publish_provider_daily_usage u
+          where u.provider='youtube' and u.daily_date=current_date
+       ),0) < 6)
      order by j.next_attempt_at, j.created_at, j.id
      for update of j skip locked
      limit v_limit
@@ -89,17 +103,28 @@ begin
       from claimed
     on conflict(provider,account_id) do update
       set next_allowed_at=excluded.next_allowed_at,
-          daily_date=case when social_publish_account_limits.daily_date=current_date
-                          then current_date else current_date end,
+          daily_date=current_date,
           daily_count=case when social_publish_account_limits.daily_date=current_date
                            then social_publish_account_limits.daily_count+1 else 1 end,
           updated_at=now()
     returning provider,account_id
+  ), provider_paced as (
+    insert into public.social_publish_provider_daily_usage(provider,daily_date,daily_count,updated_at)
+    select provider,current_date,count(*)::integer,now()
+      from claimed where provider='youtube' group by provider
+    on conflict(provider) do update
+      set daily_date=current_date,
+          daily_count=case when social_publish_provider_daily_usage.daily_date=current_date
+                           then social_publish_provider_daily_usage.daily_count+excluded.daily_count
+                           else excluded.daily_count end,
+          updated_at=now()
+    returning provider
   )
   select c.id,c.task_id,c.provider,c.account_id,c.video_url,c.title,c.description,
          c.privacy_status,c.status,c.attempts,c.platform_payload
     from claimed c
-    cross join (select count(*) from paced) p;
+    cross join (select count(*) from paced) a
+    cross join (select count(*) from provider_paced) p;
 end;
 $$;
 revoke all on function public.claim_social_publish_jobs(integer,integer,integer) from public, anon, authenticated;
