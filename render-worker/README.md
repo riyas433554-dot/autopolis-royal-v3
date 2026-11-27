@@ -41,3 +41,14 @@ Jobs persist in SQLite. The worker processes one GPU render at a time. Failed jo
 ## Costs and limits
 
 The code/models are open source/free to self-host, but a persistent GPU host is not guaranteed free. Temporary free notebook GPUs are not a reliable always-on worker. The worker caps source files at 1 GB and final uploads at 100 MB to match the current YouTube publisher. Long/high-quality outputs may need a higher limit and a corresponding publisher change.
+
+
+## VoiceStudio narration fallback
+
+VoiceStudio remains the primary narration engine. If its TTS request fails, the worker tries the public Hugging Face Space `Nymbo/Kokoro-TTS` using its Gradio `/generate_speech` API. Configure:
+- `KOKORO_HF_SPACE` (default `Nymbo/Kokoro-TTS`)
+- `KOKORO_HF_VOICE` (default `af_heart`)
+- `KOKORO_HF_SPEED` (default `1.0`)
+- optional `HF_TOKEN` if the Space requires authentication
+
+This is best-effort fallback, not a production SLA: the public Space can queue, rate-limit, change API, or become unavailable. The full narration script is sent to Hugging Face's public Space; do not use confidential scripts. Kokoro-82M weights are Apache-2.0, but hosted Space availability and the selected voice/data licenses must be checked separately before monetized publishing. If both VoiceStudio and Kokoro fail, the render job fails visibly instead of silently publishing without narration.
