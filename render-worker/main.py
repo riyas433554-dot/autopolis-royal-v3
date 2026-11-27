@@ -130,7 +130,9 @@ def _generate_voice_studio_audio(script: str, target: str):
     api_key = os.getenv("VOICE_STUDIO_API_KEY", "").strip()
     if api_key:
         headers["authorization"] = "Bearer " + api_key
-    model = os.getenv("VOICE_STUDIO_MODEL", "omnivoice").strip()
+    model = os.getenv("VOICE_STUDIO_MODEL", "").strip()
+    if not model:
+        raise RuntimeError("Set VOICE_STUDIO_MODEL to a VoiceStudio engine whose model/weights license permits your intended use")
     voice = os.getenv("VOICE_STUDIO_VOICE", "default").strip()
     language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
     chunks = _split_tts_text(script)
@@ -364,7 +366,7 @@ def render_and_callback(job_id: str):
         if caption_error:
             qc["caption_error"] = caption_error
         qc["voice_provider"] = "VoiceStudio"
-        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "omnivoice")
+        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "unconfigured")
         qc["voice_duration_seconds"] = round(voice_duration, 2)
         if qc["size_bytes"] > MAX_VIDEO_BYTES:
             raise RuntimeError("QC failed: final video exceeds 100 MB")
