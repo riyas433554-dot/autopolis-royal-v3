@@ -2,6 +2,7 @@ import { createServer } from 'http';
 import { URL } from 'url';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { createTaskRunner } from './task-runner.js';
 
 const PORT = process.env.PORT || 3201;
 const DIST_DIR = join(import.meta.dirname, 'dist');
@@ -156,6 +157,19 @@ const server = createServer(async (req, res) => {
   await serveStatic(pathname, req, res);
 });
 
+const taskRunnerToken = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN || '';
+const taskRunner = taskRunnerToken ? createTaskRunner({
+  baseUrl: 'http://127.0.0.1:' + PORT,
+  token: taskRunnerToken,
+}) : null;
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log('Autopolis Royal server running on http://0.0.0.0:' + PORT);
+  if (taskRunner) {
+    console.log('Autonomous task runner enabled; polling queued tasks.');
+    taskRunner.start().catch(error => console.error('[Autopolis task runner] stopped:', error));
+    server.on('close', taskRunner.stop);
+  } else {
+    console.warn('Autonomous task runner disabled: AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN is missing.');
+  }
 });
