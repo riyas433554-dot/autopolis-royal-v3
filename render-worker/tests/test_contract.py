@@ -159,3 +159,36 @@ def test_zero_gpu_provider_calls_public_space_and_makes_portrait_clips(monkeypat
     assert calls[1]["ratio"] == "480x832"
     assert calls[1]["duration"] == 3
     assert calls[1]["api_name"] == "/generate_video"
+
+
+def test_autopolis_signed_upload_flow_avoids_worker_supabase_service_key(monkeypatch, tmp_path):
+    calls = []
+    media_path = tmp_path / "final.mp4"
+    media_path.write_bytes(b"final-mp4")
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        text = ""
+        def __init__(self, payload=None):
+            self.payload = payload or {}
+        def json(self):
+            return self.payload
+    def fake_post(url, **kwargs):
+        calls.append(("post", url, kwargs))
+        if kwargs["json"]["action"] == "upload_url":
+            return FakeResponse({"signed_url": "https://project.supabase.co/storage/v1/object/upload/sign/bucket/path?token=upload"})
+        return FakeResponse({"video_url": "https://project.supabase.co/storage/v1/object/sign/bucket/path?token=download"})
+    def fake_put(url, **kwargs):
+        calls.append(("put", url, kwargs))
+        assert kwargs["data"].read() == b"final-mp4"
+        return FakeResponse()
+    monkeypatch.setattr(main.requests, "post", fake_post)
+    monkeypatch.setattr(main.requests, "put", fake_put)
+    monkeypatch.setenv("AUTOPOLIS_PUBLIC_URL", "https://autopolis.example")
+    monkeypatch.setenv("VIDEO_RENDERER_TOKEN", "renderer-secret")
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    result = main._upload_to_autopolis_storage(str(media_path), 42, "job-42")
+    assert result.startswith("https://project.supabase.co/")
+    assert len(calls) == 3
+    assert calls[0][2]["headers"]["authorization"] == "Bearer renderer-secret"
+    assert calls[1][0] == "put" and calls[1][1].startswith("https://project.supabase.co/")
