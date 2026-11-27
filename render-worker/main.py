@@ -703,8 +703,10 @@ def render_and_callback(job_id: str):
         render_source = "hf_zerogpu"
     elif provider == "ai_video_studio":
         render_source = "ai_video_studio"
+    elif provider == "motion_graphics":
+        render_source = "motion_graphics"
     else:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, or motion_graphics")
     if render_source == "ai_video_studio":
         word_count = len(script.split())
         is_reel = payload.get("deliverable_type") == "reel"
@@ -743,6 +745,8 @@ def render_and_callback(job_id: str):
         final = os.path.join(temp, "autopolis-final.mp4")
         if render_source == "hf_zerogpu":
             source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+        elif render_source == "motion_graphics":
+            source = _render_with_motion_graphics(script, payload["title"], payload["deliverable_type"], temp)
         else:
             _download_studio_video(project_id, source)
         source_qc = _probe(source)
