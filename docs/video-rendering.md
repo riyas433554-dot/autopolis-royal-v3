@@ -1,12 +1,12 @@
 # Autopolis external video rendering
 
-Autopolis is the task/control plane. A separate GPU host runs the renderer; it must not be installed on the Render web service.
+Autopolis is the task/control plane. A separate worker bridge handles rendering. It can use a shared free Hugging Face ZeroGPU provider for short clips or a private GPU host; do not put heavy model inference on the main Autopolis Render web service.
 
 ## Candidate GPU engine
 
 ## Voice and narration
 
-Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as a separate local/headless service for narration and transcription; the render worker uses its OpenAI-compatible `/v1/audio/speech` and `/v1/audio/transcriptions` endpoints. The final MP4 narration is VoiceStudio audio, not ElevenLabs. VoiceStudio's application is AGPL-3.0, so keep it as an independent service rather than embedding/modifying it inside Autopolis. Set `VOICE_STUDIO_MODEL` explicitly after reviewing its model/weights license; the default OmniVoice weights are CC-BY-NC and must not be used for monetized output without separate rights. Voice and tokenizer assets may also have separate terms.
+Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as a separate local/headless service for narration and transcription; the render worker uses its OpenAI-compatible `/v1/audio/speech` and `/v1/audio/transcriptions` endpoints. The VoiceStudio Android preview also offers a Phone Speech API; set `VOICE_STUDIO_ASR_MODE=phone` for its base64 WAV ASR route (worker chunks to 25 seconds and uses approximate sentence timing). Secure the phone API with a bearer token and private HTTPS tunnel. The final MP4 narration is VoiceStudio audio, not ElevenLabs. VoiceStudio's application is AGPL-3.0, so keep it as an independent service rather than embedding/modifying it inside Autopolis. Set `VOICE_STUDIO_MODEL` explicitly after reviewing its model/weights license; the default OmniVoice weights are CC-BY-NC and must not be used for monetized output without separate rights. Voice and tokenizer assets may also have separate terms.
 
 [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) is the first high-quality open-source candidate:
 - MIT application code.
@@ -23,7 +23,7 @@ Autopolis sends an authenticated JSON `POST {VIDEO_RENDERER_URL}/v1/jobs`:
 
 The renderer must return HTTP 202 with `{ job_id, status: "queued" }`. `job_id` must be stable for the idempotency key.
 
-When the MP4 is finished, the renderer must upload it to the configured Supabase Storage bucket and call the `callback_url` with:
+When the MP4 is finished, the renderer requests short-lived Supabase signed upload/download URLs from Autopolis (`POST /api/video-render-storage`), streams the MP4 to Storage without receiving the service-role key, and calls the `callback_url` with:
 - `Authorization: Bearer VIDEO_RENDERER_CALLBACK_TOKEN`
 - `{ job_id, video_url, qc_passed: true, qc_report }`
 
