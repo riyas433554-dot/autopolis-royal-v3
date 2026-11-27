@@ -37,10 +37,12 @@ test('repurpose requires a source task and valid clip timeline', () => {
   });
   assert.equal(spec.source_task_id, 12);
   assert.deepEqual(spec.clip_segments, [{ start_seconds: 31.5, end_seconds: 47.25, hook: 'surprise reveal' }]);
+  const autoSpec = normalizeContentSpec({ task: { id: 18, deliverable_type: 'clip', content_mode: 'repurpose', source_video_task_id: 12 } });
+  assert.deepEqual(autoSpec.clip_segments, []);
   assert.throws(() => normalizeContentSpec({
     task: { id: 15, deliverable_type: 'reel', content_mode: 'repurpose' },
     segments: [{ start_seconds: 20, end_seconds: 10 }],
-  }), /source task and at least one valid clip segment/);
+  }), /different source task/);
 });
 
 test('rejects unknown platform targets and unsupported content modes', () => {
