@@ -1,4 +1,4 @@
-const REEL_TARGETS = new Set(['instagram_reels','facebook_reels']);
+const REEL_TARGETS = new Set(['youtube_shorts','instagram_reels','facebook_reels']);
 const SHORT_TYPES = new Set(['reel','short','clip','casual_ai']);
 
 export function needsAutoRepurpose(task, targets) {
@@ -19,7 +19,7 @@ export function buildAutoRepurposeTask(task, targets, now = new Date().toISOStri
     'Source video task: #' + task.id,
     'Select up to three strongest hook / reveal / funny / surprising moments from the QC-passed source video.',
     'Create a vertical 9:16 highlight compilation with clean cuts, readable burned captions when transcription succeeds, normalized audio, and no invented scenes.',
-    'Publish the derivative only to these selected destinations: ' + reelTargets.join(', '),
+    'Publish the derivative only to these selected short-form destinations: ' + reelTargets.join(', '),
     'Source title: ' + String(task.title || ''),
     'Source brief: ' + String(task.description || '').slice(0, 7000),
   ].join('\n\n');
