@@ -24,6 +24,14 @@ jobs:
         run: npm ci
       - name: Unit tests
         run: npm test
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Render worker tests
+        run: |
+          pip install -r render-worker/requirements-dev.txt
+          PYTHONPATH=render-worker pytest -q render-worker/tests
       - name: Lint
         run: npm run lint
       - name: Production build
