@@ -22,7 +22,7 @@ Default targets:
 - Long form: YouTube + Facebook full video, plus automatically generated YouTube Shorts + Instagram/Facebook Reels from the best scenes
 - Short form / repurpose: YouTube Shorts + Instagram Reels + Facebook Reels
 
-The renderer only dispatches supported video deliverable types. Categories remain unrestricted except for a 120-character input limit. When a long-form task selects Instagram Reels and/or Facebook Reels, the render callback creates one idempotent automatic Content Studio child task and sends the QC-passed source to the repurpose worker; the full movie is not uploaded as a Reel. Short-form and manual repurpose tasks publish directly to their selected short destinations.
+The renderer only dispatches supported video deliverable types. Categories remain unrestricted except for a 120-character input limit. When a long-form task selects YouTube Shorts, Instagram Reels and/or Facebook Reels, the render callback creates one idempotent automatic Content Studio child task and sends the QC-passed source to the repurpose worker; the full movie is not uploaded as a Reel. Short-form and manual repurpose tasks publish directly to their selected short destinations.
 
 ## Repurpose worker
 
