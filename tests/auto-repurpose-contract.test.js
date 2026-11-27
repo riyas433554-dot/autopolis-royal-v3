@@ -4,7 +4,7 @@ import { buildAutoRepurposeTask, needsAutoRepurpose } from '../api/auto-repurpos
 
 test('long-form tasks with Reel destinations create a derivative, not a full-video Reel post', () => {
   const task = { id: 88, title: 'Pilot movie', description: 'A story', content_mode: 'long_form', deliverable_type: 'movie', content_category: 'sci-fi' };
-  assert.equal(needsAutoRepurpose(task, ['youtube','instagram_reels','facebook_reels']), true);
+  assert.equal(needsAutoRepurpose(task, ['youtube_shorts','instagram_reels','facebook_reels']), true);
   const child = buildAutoRepurposeTask(task, ['youtube','instagram_reels','facebook_reels'], '2026-11-27T00:00:00.000Z');
   assert.equal(child.content_mode, 'repurpose');
   assert.equal(child.source_video_task_id, 88);
