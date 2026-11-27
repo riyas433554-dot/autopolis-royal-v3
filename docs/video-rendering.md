@@ -40,6 +40,8 @@ Set only after a renderer worker is actually deployed:
 
 The callback automatically publishes to the connected YouTube account only after `qc_passed=true`. It uses the existing encrypted OAuth tokens; it does not ask the agent to publish directly.
 
+If a render or upload fails, an owner can retry the saved video task through `POST /api/video-render-retry` with `{ "task_id": <id> }` and the lifecycle admin bearer token. A completed render retries the YouTube callback without rerendering; a failed render is requeued by the worker's idempotency key.
+
 ## Hosting reality
 
 Open-source model/code can be free; sustained GPU compute and persistent public hosting generally are not. Free Colab/Kaggle GPU sessions are temporary and unsuitable as an always-on worker. Start with a separate GPU host when available; keep a stock-footage + FFmpeg fallback for CPU/free workers. Never describe GPU generation as unlimited-free hosting.
