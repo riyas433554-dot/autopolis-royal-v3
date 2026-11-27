@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeContentSpec } from '../api/content-contract.js';
 
-test('routes anime/movie/story tasks as long-form with YouTube and Facebook defaults', () => {
+test('routes anime/movie/story tasks as long-form with full-video and promotional short defaults', () => {
   const spec = normalizeContentSpec({
     task: { id: 12, deliverable_type: 'anime', content_category: 'fantasy anime' },
   });
   assert.equal(spec.content_mode, 'long_form');
   assert.equal(spec.content_category, 'fantasy anime');
-  assert.deepEqual(spec.platform_targets, ['youtube', 'facebook']);
+  assert.deepEqual(spec.platform_targets, ['youtube', 'facebook', 'youtube_shorts', 'instagram_reels', 'facebook_reels']);
 });
 
 test('short-form supports arbitrary categories and platform-specific short destinations', () => {
