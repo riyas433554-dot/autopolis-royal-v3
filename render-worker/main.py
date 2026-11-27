@@ -186,7 +186,8 @@ def _generate_voice_studio_audio(script: str, target: str):
                     listing.write("file " + json.dumps(audio_path) + "\n")
             subprocess.run([
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-filter_threads", "1", "-filter_complex_threads", "1",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
                 "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", target,
             ], capture_output=True, text=True, timeout=1800, check=True)
     if not os.path.getsize(target):
@@ -426,9 +427,10 @@ def _compress_video(source: str, voice_audio: str, target: str, video_duration: 
         filters.append("subtitles=" + subtitle_path)
     video_filter = ["-vf", ",".join(filters)] if filters else []
     subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", voice_audio,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-filter_complex_threads", "1", "-i", source, "-i", voice_audio,
         "-map", "0:v:0", "-map", "1:a:0", *video_filter, "-af", "apad", "-shortest",
-        "-c:v", "libx264", "-preset", "veryfast", "-b:v", str(target_video_bps),
+        "-c:v", "libx264", "-threads:v", "1", "-preset", "ultrafast", "-b:v", str(target_video_bps),
         "-maxrate", str(target_video_bps), "-bufsize", str(target_video_bps * 2),
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", target,
@@ -575,7 +577,7 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     word_count = len(str(script or "").split())
     total_seconds = max(45.0, min(60.0, word_count / 2.5))
     scene_seconds = total_seconds / len(scenes)
-    fps = 24
+    fps = 18
     clips = []
     for index, scene in enumerate(scenes):
         image_path = os.path.join(temp, f"motion-card-{index:02d}.png")
@@ -586,15 +588,16 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
         video_filter = (
             f"zoompan=z='min(zoom+0.00035,1.06)':"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={frames}:s=1280x720:fps={fps},"
+            f"d={frames}:s=960x540:fps={fps},"
             f"fade=t=in:st=0:d=0.45,"
             f"fade=t=out:st={fade_out_start:.3f}:d=0.45"
         )
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-filter_threads", "1", "-filter_complex_threads", "1",
             "-loop", "1", "-framerate", str(fps), "-i", image_path,
             "-vf", video_filter, "-t", f"{scene_seconds:.3f}", "-an",
-            "-c:v", "libx264", "-preset", "ultrafast", "-b:v", "1200k",
+            "-c:v", "libx264", "-threads:v", "1", "-preset", "ultrafast", "-b:v", "900k",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", clip_path,
         ], capture_output=True, text=True, timeout=1800, check=True)
         clips.append(clip_path)
@@ -605,11 +608,12 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     output = os.path.join(temp, "motion-graphics-source.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-filter_complex_threads", "1",
         "-f", "concat", "-safe", "0", "-i", concat_path,
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
         "-t", f"{total_seconds:.3f}",
         "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", output,
+        "-c:v", "copy", "-threads:v", "1", "-c:a", "aac", "-b:a", "96k", "-shortest", output,
     ], capture_output=True, text=True, timeout=1800, check=True)
     return output
 

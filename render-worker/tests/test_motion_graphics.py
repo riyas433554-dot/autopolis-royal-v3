@@ -62,3 +62,16 @@ def test_motion_graphics_ffmpeg_commands_are_memory_bounded(tmp_path, monkeypatc
         assert command[command.index("-threads:v") + 1] == "1"
         assert "s=960x540:fps=18" in command[command.index("-vf") + 1]
     assert calls[-1][calls[-1].index("-filter_threads") + 1] == "1"
+
+
+def test_final_video_compression_limits_encoder_threads(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    monkeypatch.setattr(worker.os.path, "getsize", lambda path: 1024)
+
+    worker._compress_video("source.mp4", "voice.wav", "final.mp4", 48.0, 48.0)
+
+    command = calls[0]
+    assert command[command.index("-filter_threads") + 1] == "1"
+    assert command[command.index("-threads:v") + 1] == "1"
+    assert command[command.index("-preset") + 1] == "ultrafast"
