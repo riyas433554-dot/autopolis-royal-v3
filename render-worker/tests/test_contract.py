@@ -243,3 +243,33 @@ def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path
     assert calls[0] == ("client", "test/Kokoro", None)
     assert calls[1] == ("predict", "Hello fallback", 1.0, "af_heart", "/generate_speech")
     assert open(target, "rb").read() == b"normalized-wav"
+
+
+def test_render_contract_preserves_content_mode_freeform_category_and_targets():
+    request = main.RenderJobRequest(
+        task_id=30, title="Fantasy episode", deliverable_type="series_episode",
+        script="A long story script.", callback_url="https://autopolis.example/callback",
+        content_mode="long_form", content_category="fantasy anime",
+        platform_targets=["youtube", "facebook"],
+    )
+    payload = request.model_dump()
+    assert payload["content_mode"] == "long_form"
+    assert payload["content_category"] == "fantasy anime"
+    assert payload["platform_targets"] == ["youtube", "facebook"]
+
+
+def test_repurpose_contract_requires_source_and_valid_segments():
+    with pytest.raises(ValidationError, match="repurpose"):
+        main.RenderJobRequest(
+            task_id=31, title="Best scene", deliverable_type="clip",
+            script="Find a standout moment.", callback_url="https://autopolis.example/callback",
+            content_mode="repurpose",
+        )
+    request = main.RenderJobRequest(
+        task_id=32, title="Best scene", deliverable_type="clip",
+        script="Cut the selected scene.", callback_url="https://autopolis.example/callback",
+        content_mode="repurpose", source_task_id=30,
+        clip_segments=[{"start_seconds": 22, "end_seconds": 39, "hook": "surprise"}],
+    )
+    assert request.source_task_id == 30
+    assert request.clip_segments[0].end_seconds == 39
