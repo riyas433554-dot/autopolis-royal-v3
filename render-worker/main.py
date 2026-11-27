@@ -160,7 +160,7 @@ def _generate_voice_studio_audio(script: str, target: str):
             concat_path = os.path.join(temp, "audio-list.txt")
             with open(concat_path, "w", encoding="utf-8") as listing:
                 for audio_path in audio_paths:
-            listing.write("file " + json.dumps(path) + "\n")
+                listing.write("file " + json.dumps(audio_path) + "\n")
             subprocess.run([
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", concat_path,
@@ -380,7 +380,7 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
     concat_path = os.path.join(temp, "zerogpu-clips.txt")
     with open(concat_path, "w", encoding="utf-8") as listing:
         for path in normalized:
-            listing.write("file '" + path.replace("'", "'\\''") + "'\\n")
+            listing.write("file " + json.dumps(path) + "\n")
     source = os.path.join(temp, "zerogpu-visuals.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
