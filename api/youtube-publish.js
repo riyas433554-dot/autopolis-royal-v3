@@ -2,7 +2,6 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import supabase from './db-client.js';
 
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
-const PUBLIC_URL = (process.env.AUTOPOLIS_PUBLIC_URL || 'https://autopolis-royal-v3.onrender.com').replace(/\/$/, '');
 
 function isOwner(req) {
   const token = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN;
@@ -129,8 +128,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'task_id, exact connected YouTube account_id, and title are required' });
   }
 
+  let videoUrl;
+  try { videoUrl = safeMediaUrl(req.body?.video_url); }
+  catch (error) { return res.status(400).json({ error: String(error?.message || error) }); }
+
   try {
-    safeMediaUrl(req.body?.video_url);
     const [{ data: task, error: taskError }, { data: account, error: accountError }] = await Promise.all([
       supabase.from('tasks').select('id,status').eq('id', taskId).maybeSingle(),
       supabase.from('connected_accounts').select('id,account_id,account_name,status').eq('provider', 'youtube').eq('account_id', accountId).maybeSingle(),
@@ -148,16 +150,20 @@ export default async function handler(req, res) {
     let job = existing;
     if (!job) {
       const { data, error } = await supabase.from('social_publish_jobs').insert({
-        task_id: taskId, provider: 'youtube', account_id: accountId, video_url: req.body.video_url,
+        task_id: taskId, provider: 'youtube', account_id: accountId, video_url: videoUrl.toString(),
         title, description, privacy_status: privacyStatus, status: 'queued',
       }).select('*').single();
       if (error) throw error;
       job = data;
     }
+    if (!['queued', 'error'].includes(job.status)) {
+      return res.status(409).json({ error: 'This account publish job is already being processed' });
+    }
     const { data: uploading, error: updateError } = await supabase.from('social_publish_jobs')
       .update({ status: 'uploading', attempts: Number(job.attempts || 0) + 1, error: null, updated_at: new Date().toISOString() })
-      .eq('id', job.id).neq('status', 'published').select('*').single();
+      .eq('id', job.id).eq('status', job.status).select('*').maybeSingle();
     if (updateError) throw updateError;
+    if (!uploading) return res.status(409).json({ error: 'Another publisher claimed this account job; no duplicate upload started' });
     try {
       const published = await uploadJob(uploading);
       const { data: finalJob, error: finalError } = await supabase.from('social_publish_jobs').update({
