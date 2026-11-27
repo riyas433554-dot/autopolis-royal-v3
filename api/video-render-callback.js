@@ -1,4 +1,5 @@
 import supabase from './db-client.js';
+import { buildPublishJobs } from './social-publish-contract.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -18,28 +19,12 @@ function safeMediaUrl(value) {
   return url.toString();
 }
 
-function addJob(rows, provider, accountId, task, videoUrl, format) {
-  rows.push({
-    task_id: task.id, provider, account_id: accountId, video_url: videoUrl,
-    title: String(task.title || 'Autopolis video').slice(0, 100),
-    description: String(task.description || '').slice(0, 5000),
-    privacy_status: 'public', status: 'queued', next_attempt_at: new Date().toISOString(),
-    platform_payload: {
-      format,
-      content_mode: task.content_mode || 'auto',
-      content_category: task.content_category || 'general',
-      caption: [task.title, task.description].filter(Boolean).join('\n\n').slice(0, 2200),
-    },
-  });
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!isRenderer(req)) return res.status(401).json({ error: 'Renderer callback token required' });
-
   const providerJobId = String(req.body?.job_id || '').trim().slice(0, 160);
   if (!providerJobId) return res.status(400).json({ error: 'job_id is required' });
   if (req.body?.qc_passed !== true) return res.status(422).json({ error: 'Renderer callback must confirm qc_passed=true before publication' });
@@ -60,43 +45,20 @@ export default async function handler(req, res) {
       .eq('id', job.task_id).maybeSingle();
     if (taskError) throw taskError;
     if (!task || task.status !== 'done') return res.status(409).json({ error: 'Task must be done before render callback' });
-
     const targets = Array.isArray(task.platform_targets) && task.platform_targets.length
       ? [...new Set(task.platform_targets)] : ['youtube','facebook'];
-    const accountRows = [];
-    if (targets.includes('youtube') || targets.includes('youtube_shorts')) {
-      const { data, error } = await supabase.from('connected_accounts')
-        .select('account_id,account_name').eq('provider','youtube').eq('status','connected');
-      if (error) throw error;
-      for (const account of data || []) {
-        addJob(accountRows, 'youtube', account.account_id, task, videoUrl,
-          targets.includes('youtube') ? 'youtube_video' : 'youtube_short');
-      }
-    }
-    if (targets.includes('facebook')) {
-      const { data, error } = await supabase.from('connected_accounts')
-        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
-      if (error) throw error;
-      for (const account of (data || []).filter(item => !String(item.account_id).startsWith('ig:'))) {
-        addJob(accountRows, 'facebook', account.account_id, task, videoUrl, 'facebook_video');
-      }
-    }
-    if (targets.includes('facebook_reels')) {
-      const { data, error } = await supabase.from('connected_accounts')
-        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
-      if (error) throw error;
-      for (const account of (data || []).filter(item => !String(item.account_id).startsWith('ig:'))) {
-        addJob(accountRows, 'facebook_reels', account.account_id, task, videoUrl, 'facebook_reel');
-      }
-    }
-    if (targets.includes('instagram_reels')) {
-      const { data, error } = await supabase.from('connected_accounts')
-        .select('account_id,account_name').eq('provider','meta').eq('status','connected');
-      if (error) throw error;
-      for (const account of (data || []).filter(item => String(item.account_id).startsWith('ig:'))) {
-        addJob(accountRows, 'instagram', account.account_id, task, videoUrl, 'instagram_reel');
-      }
-    }
+
+    const needsYoutube = targets.includes('youtube') || targets.includes('youtube_shorts');
+    const needsMeta = targets.some(target => ['facebook','facebook_reels','instagram_reels'].includes(target));
+    const accountRequests = [];
+    if (needsYoutube) accountRequests.push(supabase.from('connected_accounts').select('account_id,account_name').eq('provider','youtube').eq('status','connected'));
+    if (needsMeta) accountRequests.push(supabase.from('connected_accounts').select('account_id,account_name').eq('provider','meta').eq('status','connected'));
+    const accountResults = await Promise.all(accountRequests);
+    for (const result of accountResults) if (result.error) throw result.error;
+    let index = 0;
+    const youtubeAccounts = needsYoutube ? accountResults[index++].data || [] : [];
+    const metaAccounts = needsMeta ? accountResults[index].data || [] : [];
+    const accountRows = buildPublishJobs(task, videoUrl, targets, youtubeAccounts, metaAccounts);
 
     let queuedCount = 0;
     if (accountRows.length) {
@@ -106,7 +68,6 @@ export default async function handler(req, res) {
       if (error) throw error;
       queuedCount = (data || []).length;
     }
-
     const { data: allJobs, error: allJobsError } = await supabase.from('social_publish_jobs')
       .select('id,status,provider_url,provider_video_id,error').eq('task_id', job.task_id);
     if (allJobsError) throw allJobsError;
@@ -115,15 +76,12 @@ export default async function handler(req, res) {
     const status = allPublished ? 'published' : pending ? 'publishing' : 'ready';
     const report = {
       ...(req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {}),
-      platform_targets: targets,
-      account_publish_jobs: (allJobs || []).length,
-      queued_account_jobs: queuedCount,
-      publish_policy: 'per-account queue; paced and retried independently',
+      platform_targets: targets, account_publish_jobs: (allJobs || []).length,
+      queued_account_jobs: queuedCount, publish_policy: 'per-account queue; paced and retried independently',
     };
     const { error: updateError } = await supabase.from('video_render_jobs').update({
       status, video_url: videoUrl, qc_passed: true, qc_report: report,
-      rendered_at: job.rendered_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      rendered_at: job.rendered_at || new Date().toISOString(), updated_at: new Date().toISOString(),
       error: accountRows.length ? null : 'QC passed, but no connected accounts matched the selected destinations',
       ...(allPublished ? {
         provider_url: (allJobs || []).find(item => item.provider_url)?.provider_url || null,
