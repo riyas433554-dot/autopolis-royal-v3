@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hmac
 import json
 import os
@@ -136,7 +137,7 @@ def _generate_voice_studio_audio(script: str, target: str):
         raise RuntimeError("Set VOICE_STUDIO_MODEL to a VoiceStudio engine whose model/weights license permits your intended use")
     voice = os.getenv("VOICE_STUDIO_VOICE", "default").strip()
     language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
-    chunks = _split_tts_text(script)
+    chunks = _split_tts_text(script, limit=int(os.getenv("VOICE_STUDIO_TTS_CHUNK_CHARS", "1800")))
     if not chunks:
         raise RuntimeError("VoiceStudio narration script is empty")
     with tempfile.TemporaryDirectory(prefix="autopolis-voicestudio-") as temp:
@@ -170,13 +171,86 @@ def _generate_voice_studio_audio(script: str, target: str):
         raise RuntimeError("VoiceStudio returned an empty narration WAV")
 
 
+def _seconds_to_srt(value: float) -> str:
+    milliseconds = max(0, int(round(value * 1000)))
+    hours, remainder = divmod(milliseconds, 3600000)
+    minutes, remainder = divmod(remainder, 60000)
+    seconds, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+def _phone_text_to_srt(text: str, start: float, duration: float) -> str:
+    import re
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", text.strip()) if part.strip()]
+    if not sentences:
+        sentences = [text.strip()] if text.strip() else []
+    if not sentences:
+        return ""
+    total_words = max(1, sum(len(sentence.split()) for sentence in sentences))
+    cursor = start
+    entries = []
+    index = 1
+    for sentence in sentences:
+        share = duration * len(sentence.split()) / total_words
+        end = min(start + duration, cursor + max(0.8, share))
+        entries.append(f"{index}\\n{_seconds_to_srt(cursor)} --> {_seconds_to_srt(end)}\\n{sentence}\\n")
+        index += 1
+        cursor = end
+    return "\\n".join(entries)
+
+
+def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) -> str | None:
+    """Use VoiceStudio Android Phone Speech API, which accepts base64 PCM WAV <=30s."""
+    base = os.getenv("VOICE_STUDIO_URL", "").rstrip("/")
+    duration = _probe_audio_duration(audio_path)
+    chunk_seconds = 25
+    with tempfile.TemporaryDirectory(prefix="voicestudio-phone-asr-") as temp:
+        all_srt = []
+        for index, offset in enumerate(range(0, int(duration) + 1, chunk_seconds)):
+            chunk_path = os.path.join(temp, f"asr-{index:03d}.wav")
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-ss", str(offset), "-i", audio_path, "-t", str(chunk_seconds),
+                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", chunk_path,
+            ], capture_output=True, text=True, timeout=180, check=True)
+            if not os.path.isfile(chunk_path) or not os.path.getsize(chunk_path):
+                break
+            with open(chunk_path, "rb") as audio:
+                encoded = base64.b64encode(audio.read()).decode("ascii")
+            response = requests.post(
+                base + "/v1/audio/transcriptions",
+                headers=headers,
+                json={"audio": encoded},
+                timeout=(20, 600),
+            )
+            if not response.ok:
+                raise RuntimeError(f"VoiceStudio phone ASR failed with HTTP {response.status_code}: {response.text[:300]}")
+            try:
+                data = response.json()
+                text = data.get("text") or data.get("transcription") or ""
+            except ValueError:
+                text = response.text
+            text = str(text).strip()
+            if text:
+                chunk_duration = min(chunk_seconds, max(0.1, duration - offset))
+                all_srt.append(_phone_text_to_srt(text, float(offset), chunk_duration))
+    captions = "\\n".join(part for part in all_srt if part).strip()
+    if not captions:
+        return None
+    with open(target, "w", encoding="utf-8") as output:
+        output.write(captions + "\\n")
+    return target
+
+
 def _transcribe_voice_studio_audio(audio_path: str, target: str) -> str | None:
-    """Ask VoiceStudio's local ASR for captions matching the final narration."""
+    """Transcribe captions with VoiceStudio server or its Android phone speech API."""
     base = os.getenv("VOICE_STUDIO_URL", "http://127.0.0.1:3900").rstrip("/")
     headers = {}
     api_key = os.getenv("VOICE_STUDIO_API_KEY", "").strip()
     if api_key:
         headers["authorization"] = "Bearer " + api_key
+    if os.getenv("VOICE_STUDIO_ASR_MODE", "standard").strip().lower() == "phone":
+        return _transcribe_voice_studio_phone(audio_path, target, headers)
     form_data = {"model": os.getenv("VOICE_STUDIO_ASR_MODEL", "whisper-1"), "response_format": "srt"}
     language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
     if language:
@@ -195,7 +269,7 @@ def _transcribe_voice_studio_audio(audio_path: str, target: str) -> str | None:
     if not captions:
         return None
     with open(target, "w", encoding="utf-8") as output:
-        output.write(captions + "\n")
+        output.write(captions + "\\n")
     return target
 
 
