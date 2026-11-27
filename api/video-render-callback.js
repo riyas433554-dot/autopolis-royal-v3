@@ -97,8 +97,8 @@ export default async function handler(req, res) {
     const published = uploadResult.job;
     const { error: publishedError } = await supabase.from('video_render_jobs').update({
       status: 'published',
-      provider_video_id: published?.provider_video_id || published?.provider_video_id || null,
-      provider_url: published?.provider_url || published?.provider_url || null,
+      provider_video_id: published?.provider_video_id || null,
+      provider_url: published?.provider_url || null,
       published_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       error: null,
