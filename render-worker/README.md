@@ -24,7 +24,7 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
    - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
    - `AI_VIDEO_STUDIO_URL` (private/local URL; default http://127.0.0.1:7860)
    - `VOICE_STUDIO_URL` (private/local URL; default http://127.0.0.1:3900)
-   - `VOICE_STUDIO_MODEL` (required; explicitly choose a model/weights license suitable for monetized use) and optional `VOICE_STUDIO_VOICE` (default `default`)
+   - `VOICE_STUDIO_MODEL` (required for the server API; in phone mode it may be omitted to use the model selected in the VoiceStudio Android app). Choose model/weights whose license allows monetized use. Optional `VOICE_STUDIO_VOICE` (default `default`)
    - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`, `VOICE_STUDIO_ASR_MODE=phone` for the VoiceStudio Android Phone Speech API (its ASR accepts base64 WAV chunks up to 30 seconds; worker chunks to 25 seconds and uses approximate sentence timing)
    - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
    - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
