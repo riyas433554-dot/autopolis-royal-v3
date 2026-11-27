@@ -50,7 +50,7 @@ export default async function handler(req, res) {
         .select('task_id,renderer_job_id,status,qc_passed')
         .eq('task_id', sourceTaskId).maybeSingle();
       if (sourceError) throw sourceError;
-      if (!sourceJob || sourceJob.qc_passed !== true || !['ready', 'published'].includes(sourceJob.status) || !sourceJob.renderer_job_id) {
+      if (!sourceJob || sourceJob.qc_passed !== true || !['ready', 'publishing', 'published'].includes(sourceJob.status) || !sourceJob.renderer_job_id) {
         return res.status(409).json({ error: 'Source video must have a QC-passed ready or published render' });
       }
       const sourcePath = `videos/task-${sourceTaskId}/${sourceJob.renderer_job_id}.mp4`;
