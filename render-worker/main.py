@@ -512,7 +512,7 @@ def _scene_prompts(script: str, limit: int = 42) -> list[str]:
     return chunks
 
 
-def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp: str) -> str:
+def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp: str, content_mode: str = 'short_form') -> str:
     """Generate short visual clips through a public Hugging Face ZeroGPU Gradio Space."""
     space = os.getenv("HF_ZEROGPU_SPACE", "alexcheng0072/wan27-free-video-generator").strip()
     token = os.getenv("HF_TOKEN", "").strip() or None
@@ -520,9 +520,11 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
     prompts = _scene_prompts(script, limit=int(os.getenv("HF_ZEROGPU_SCENE_WORDS", "42")))
     if not prompts:
         raise RuntimeError("No script scenes available for ZeroGPU video generation")
-    max_scenes = int(os.getenv("HF_ZEROGPU_MAX_SCENES", "6" if deliverable_type == "reel" else "12"))
+    default_scene_limit = 48 if content_mode == "long_form" else (6 if content_mode == "short_form" else 12)
+    max_scenes = int(os.getenv("HF_ZEROGPU_MAX_SCENES", str(default_scene_limit)))
     prompts = prompts[:max_scenes]
-    ratio = "480x832" if deliverable_type == "reel" else "832x480"
+    is_short = content_mode == "short_form" or deliverable_type in {"reel", "short", "clip", "casual_ai"}
+    ratio = "480x832" if is_short else "832x480"
     duration = int(os.getenv("HF_ZEROGPU_CLIP_SECONDS", "3"))
     if duration not in (2, 3, 4, 5):
         raise RuntimeError("HF_ZEROGPU_CLIP_SECONDS must be 2, 3, 4, or 5")
@@ -553,7 +555,7 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
     normalized = []
     for index, clip_path in enumerate(clip_paths):
         normalized_path = os.path.join(temp, f"normalized-clip-{index:03d}.mp4")
-        width, height = (480, 832) if deliverable_type == "reel" else (832, 480)
+        width, height = (480, 832) if content_mode == "short_form" or deliverable_type in {"reel", "short", "clip", "casual_ai"} else (832, 480)
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path,
             "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24",
@@ -844,7 +846,9 @@ def render_and_callback(job_id: str):
             qc = _render_repurpose_video(job_id, payload, temp, final)
             media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
     else:
-        provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
+        content_mode = payload.get("content_mode", "long_form")
+    default_provider = "ai_video_studio" if content_mode == "long_form" else "hf_zerogpu"
+    provider = os.getenv("VIDEO_RENDER_PROVIDER_" + content_mode.upper(), os.getenv("VIDEO_RENDER_PROVIDER", default_provider)).strip().lower()
         if provider == "hf_zerogpu":
             render_source = "hf_zerogpu"
         elif provider == "ai_video_studio":
@@ -888,7 +892,7 @@ def render_and_callback(job_id: str):
             voice_audio = os.path.join(temp, "voicestudio-narration.wav")
             final = os.path.join(temp, "autopolis-final.mp4")
             if render_source == "hf_zerogpu":
-                source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+                source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp, content_mode)
             else:
                 _download_studio_video(project_id, source)
             source_qc = _probe(source)
