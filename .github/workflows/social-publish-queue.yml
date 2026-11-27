@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       batch_size:
-        description: Maximum account jobs to process in this run (1-10)
+        description: Maximum account jobs to process in this run (1-2)
         required: false
         default: "1"
 permissions:
