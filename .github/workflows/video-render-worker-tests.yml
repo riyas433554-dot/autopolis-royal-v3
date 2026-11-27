@@ -20,7 +20,6 @@ on:
       - "tests/content-contract.test.js"
       - "tests/video-renderer.test.js"
       - "tests/video-render-storage.test.js"
-      - "tests/social-publish-contract.test.js tests/auto-repurpose-contract.test.js"
       - "tests/auto-repurpose-contract.test.js"
       - "supabase/migrations/*video_render*"
       - "supabase/migrations/*content_studio*"
@@ -38,6 +37,7 @@ on:
       - "api/youtube-publish.js"
       - "api/meta-publish.js"
       - "api/social-publish-contract.js"
+      - "api/auto-repurpose-contract.js"
       - "api/social-publish-dispatch.js"
       - "api/connected.js"
       - "api/oauth.js"
@@ -74,7 +74,7 @@ jobs:
           node --check api/social-publish-dispatch.js
       - name: Targeted lint
         run: npx eslint api/agent-run.js api/content-contract.js api/tasks.js api/video-renderer.js api/video-render-storage.js api/video-render-callback.js api/video-render-retry.js api/youtube-publish.js api/meta-publish.js api/social-publish-contract.js api/social-publish-dispatch.js api/auto-repurpose-contract.js api/connected.js api/oauth.js
-      - run: node --test tests/content-contract.test.js tests/video-renderer.test.js tests/video-render-storage.test.js tests/social-publish-contract.test.js
+      - run: node --test tests/content-contract.test.js tests/video-renderer.test.js tests/video-render-storage.test.js tests/social-publish-contract.test.js tests/auto-repurpose-contract.test.js
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
