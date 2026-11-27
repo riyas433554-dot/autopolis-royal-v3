@@ -89,6 +89,19 @@ async function fetchVideo(url) {
   return bytes;
 }
 
+async function publishFacebookVideo(job, pageId, token, bytes) {
+  const form = new FormData();
+  form.append('access_token', token);
+  form.append('title', String(job.title || '').slice(0, 100));
+  form.append('description', String(job.description || '').slice(0, 5000));
+  form.append('source', new Blob([bytes], { type: 'video/mp4' }), 'autopolis-video.mp4');
+  const url = new URL('https://graph.facebook.com/' + GRAPH_VERSION + '/' + encodeURIComponent(pageId) + '/videos');
+  const response = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.id) throw new Error(String(result.error?.message || 'Facebook Page video upload failed').slice(0, 450));
+  return { id: result.id, url: 'https://www.facebook.com/' + encodeURIComponent(pageId) + '/videos/' + encodeURIComponent(result.id) };
+}
+
 async function publishFacebookReel(job, pageId, token, bytes) {
   const startUrl = new URL('https://graph.facebook.com/' + GRAPH_VERSION + '/' + encodeURIComponent(pageId) + '/video_reels');
   startUrl.searchParams.set('upload_phase', 'start');
@@ -178,12 +191,15 @@ export default async function handler(req, res) {
     try {
       const accountId = uploading.account_id;
       const instagram = uploading.provider === 'instagram';
-      if (!instagram && uploading.provider !== 'facebook') throw new Error('Unsupported Meta destination provider');
+      const facebookReels = uploading.provider === 'facebook_reels';
+      if (!instagram && !facebookReels && uploading.provider !== 'facebook') throw new Error('Unsupported Meta destination provider');
       const token = await getMetaToken(accountId);
       const bytes = instagram ? null : await fetchVideo(uploading.video_url);
       const published = instagram
         ? await publishInstagramReel(uploading, accountId.replace(/^ig:/, ''), token)
-        : await publishFacebookReel(uploading, accountId, token, bytes);
+        : facebookReels
+          ? await publishFacebookReel(uploading, accountId, token, bytes)
+          : await publishFacebookVideo(uploading, accountId, token, bytes);
       const { data: finalJob, error: finalError } = await supabase.from('social_publish_jobs').update({
         status: 'published', provider_video_id: published.id, provider_url: published.url,
         published_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
