@@ -1,0 +1,6 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+numpy>=1.26,<3.0
+onnxruntime>=1.20,<2.0
+misaki[en]>=0.9.4
+kittentts @ https://github.com/KittenML/KittenTTS/releases/download/0.8/kittentts-0.8.0-py3-none-any.whl
