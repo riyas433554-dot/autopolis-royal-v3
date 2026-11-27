@@ -29,6 +29,7 @@ test('tick prevents concurrent task-runner requests', async () => {
   const runner = createTaskRunner({
     baseUrl: 'http://localhost:3201',
     token: 'token',
+    concurrency: 1,
     fetchImpl: () => {
       calls += 1;
       return new Promise(resolve => { resolveFetch = resolve; });
@@ -54,5 +55,31 @@ test('tick reports a non-success response without throwing', async () => {
   });
 
   const result = await runner.tick();
-  assert.equal(result.error, 'Agent runner returned HTTP 503');
+  assert.equal(result.error, 'Agent runner returned HTTP 503: not ready');
+});
+
+test('runner allows configured parallel claims but respects its concurrency cap', async () => {
+  const resolvers = [];
+  let calls = 0;
+  const runner = createTaskRunner({
+    baseUrl: 'http://localhost:3201',
+    token: 'token',
+    concurrency: 2,
+    fetchImpl: () => {
+      calls += 1;
+      return new Promise(resolve => { resolvers.push(resolve); });
+    },
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const first = runner.tick();
+  const second = runner.tick();
+  const third = await runner.tick();
+  assert.equal(calls, 2);
+  assert.equal(third.status, 'busy');
+
+  for (const resolve of resolvers) {
+    resolve({ ok: true, status: 200, json: async () => ({ ok: true, no_work: true }) });
+  }
+  await Promise.all([first, second]);
 });
