@@ -7,12 +7,17 @@ on:
       - "api/tasks.js"
       - "api/video-renderer.js"
       - "api/video-render-storage.js"
+      - "api/meta-publish.js"
+      - "api/social-publish-contract.js"
+      - "api/social-publish-dispatch.js"
       - "render-worker/**"
       - "tests/content-contract.test.js"
       - "tests/video-renderer.test.js"
       - "tests/video-render-storage.test.js"
+      - "tests/social-publish-contract.test.js"
       - "supabase/migrations/*video_render*"
       - "supabase/migrations/*content_studio*"
+      - "supabase/migrations/*multi_account_social*"
   push:
     branches: [main]
     paths:
@@ -36,9 +41,9 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: node --check api/agent-run.js && node --check api/content-contract.js && node --check api/tasks.js && node --check api/video-renderer.js && node --check api/video-render-storage.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js
-      - run: npx eslint api/agent-run.js api/content-contract.js api/tasks.js api/video-renderer.js api/video-render-storage.js api/video-render-callback.js api/video-render-retry.js
-      - run: node --test tests/content-contract.test.js tests/video-renderer.test.js tests/video-render-storage.test.js
+      - run: node --check api/agent-run.js && node --check api/content-contract.js && node --check api/tasks.js && node --check api/video-renderer.js && node --check api/video-render-storage.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/meta-publish.js && node --check api/social-publish-contract.js && node --check api/social-publish-dispatch.js
+      - run: npx eslint api/agent-run.js api/content-contract.js api/tasks.js api/video-renderer.js api/video-render-storage.js api/video-render-callback.js api/video-render-retry.js api/meta-publish.js api/social-publish-contract.js api/social-publish-dispatch.js
+      - run: node --test tests/content-contract.test.js tests/video-renderer.test.js tests/video-render-storage.test.js tests/social-publish-contract.test.js
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
