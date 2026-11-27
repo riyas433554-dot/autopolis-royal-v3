@@ -1,5 +1,5 @@
 export function buildPublishJobs(task, videoUrl, targets, youtubeAccounts = [], metaAccounts = []) {
-  const selected = [...new Set(Array.isArray(targets) && targets.length ? targets : ['youtube','facebook'])];
+  const selected = [...new Set(Array.isArray(targets) ? targets : ['youtube','facebook'])];
   const rows = [];
   const add = (provider, accountId, format) => rows.push({
     task_id: task.id, provider, account_id: String(accountId), video_url: videoUrl,
