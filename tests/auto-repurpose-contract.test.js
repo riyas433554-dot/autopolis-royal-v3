@@ -9,7 +9,7 @@ test('long-form tasks with Reel destinations create a derivative, not a full-vid
   assert.equal(child.content_mode, 'repurpose');
   assert.equal(child.source_video_task_id, 88);
   assert.equal(child.auto_repurpose, true);
-  assert.deepEqual(child.platform_targets, ['instagram_reels','facebook_reels']);
+  assert.deepEqual(child.platform_targets, ['youtube_shorts','instagram_reels','facebook_reels']);
   assert.equal(child.status, 'done');
   assert.match(child.description, /QC-passed source video/);
 });
