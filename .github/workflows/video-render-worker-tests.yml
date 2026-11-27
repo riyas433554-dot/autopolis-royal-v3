@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - "api/video-renderer.js"
+      - "api/content-contract.js"
+      - "api/tasks.js"
+      - "tests/content-contract.test.js"
+      - "api/content-contract.js"
+      - "api/tasks.js"
+      - "tests/content-contract.test.js"
       - "api/agent-run.js"
       - "api/video-render-callback.js"
       - "render-worker/**"
@@ -26,9 +32,9 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/video-render-storage.js
-      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js api/video-render-storage.js
-      - run: node --test tests/video-renderer.test.js tests/video-render-storage.test.js
+      - run: node --check api/agent-run.js && node --check api/content-contract.js && node --check api/video-renderer.js && node --check api/tasks.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/video-render-storage.js
+      - run: npx eslint api/agent-run.js api/content-contract.js api/tasks.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js api/video-render-storage.js
+      - run: node --test tests/content-contract.test.js tests/video-renderer.test.js tests/video-render-storage.test.js
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
