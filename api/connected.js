@@ -46,7 +46,7 @@ function createAuthUrl(provider, state) {
       redirect_uri: redirectUri,
       response_type: 'code',
       state,
-      scope: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
+      scope: 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management',
     }).toString();
     return url.toString();
   }
