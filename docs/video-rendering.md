@@ -4,6 +4,10 @@ Autopolis is the task/control plane. A separate GPU host runs the renderer; it m
 
 ## Candidate GPU engine
 
+## Voice and narration
+
+Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as a separate local/headless service for narration and transcription; the render worker uses its OpenAI-compatible `/v1/audio/speech` and `/v1/audio/transcriptions` endpoints. The final MP4 narration is VoiceStudio audio, not ElevenLabs. VoiceStudio's application is AGPL-3.0, so keep it as an independent service rather than embedding/modifying it inside Autopolis. Its model and voice assets have separate licenses; choose a model explicitly suitable for monetized videos.
+
 [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) is the first high-quality open-source candidate:
 - MIT application code.
 - Wan 2.2 TI2V-5B for generated motion, plus Kokoro narration, Whisper captions and FFmpeg assembly.
