@@ -273,40 +273,39 @@ def _compress_video(source: str, voice_audio: str, target: str, video_duration: 
         raise RuntimeError(f"Compressed MP4 must be under 100 MB; got {size} bytes")
 
 
-def _upload_to_supabase(path: str, task_id: int, job_id: str) -> str:
-    base = os.getenv("SUPABASE_URL", "").rstrip("/")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    bucket = os.getenv("SUPABASE_VIDEO_BUCKET", "autopolis-media").strip()
-    if not base or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required on the render worker")
-    headers = {"apikey": key, "authorization": "Bearer " + key}
-    bucket_url = base + "/storage/v1/bucket"
-    bucket_response = requests.post(bucket_url, headers={**headers, "content-type": "application/json"},
-                                   json={"id": bucket, "name": bucket, "public": False}, timeout=30)
-    if bucket_response.status_code not in (200, 201, 409):
-        raise RuntimeError(f"Supabase bucket setup failed with HTTP {bucket_response.status_code}")
-    object_path = f"videos/task-{task_id}/{job_id}.mp4"
-    upload_url = base + "/storage/v1/object/" + quote(bucket, safe="") + "/" + quote(object_path, safe="/")
+def _upload_to_autopolis_storage(path: str, task_id: int, job_id: str) -> str:
+    base = os.getenv("AUTOPOLIS_PUBLIC_URL", "").rstrip("/")
+    token = os.getenv("VIDEO_RENDERER_TOKEN", "").strip()
+    if not base or not token:
+        raise RuntimeError("AUTOPOLIS_PUBLIC_URL and VIDEO_RENDERER_TOKEN are required for secure media upload")
+    endpoint = base + "/api/video-render-storage"
+    headers = {"authorization": "Bearer " + token, "content-type": "application/json"}
+    common = {"task_id": task_id, "job_id": job_id}
+    upload_url_response = requests.post(
+        endpoint, headers=headers, json={**common, "action": "upload_url"}, timeout=60,
+    )
+    if not upload_url_response.ok:
+        raise RuntimeError(f"Autopolis signed upload URL failed with HTTP {upload_url_response.status_code}: {upload_url_response.text[:300]}")
+    signed_url = upload_url_response.json().get("signed_url")
+    if not signed_url or not str(signed_url).startswith("https://"):
+        raise RuntimeError("Autopolis returned an invalid signed upload URL")
     with open(path, "rb") as media:
-        upload = requests.post(upload_url, headers={**headers, "content-type": "video/mp4", "x-upsert": "true"},
-                               data=media, timeout=(30, 900))
+        upload = requests.put(
+            signed_url, data=media,
+            headers={"content-type": "video/mp4", "x-upsert": "true"},
+            timeout=(30, 900),
+        )
     if not upload.ok:
-        raise RuntimeError(f"Supabase media upload failed with HTTP {upload.status_code}: {upload.text[:300]}")
-    sign_url = base + "/storage/v1/object/sign/" + quote(bucket, safe="") + "/" + quote(object_path, safe="/")
-    signed = requests.post(sign_url, headers={**headers, "content-type": "application/json"},
-                           json={"expiresIn": 604800}, timeout=30)
-    if not signed.ok:
-        raise RuntimeError(f"Supabase signed URL creation failed with HTTP {signed.status_code}")
-    signed_path = signed.json().get("signedURL")
-    if not signed_path:
-        raise RuntimeError("Supabase signed URL response did not include signedURL")
-    if signed_path.startswith("https://"):
-        return signed_path
-    if signed_path.startswith("/storage/v1/"):
-        return base + signed_path
-    if signed_path.startswith("/object/"):
-        return base + "/storage/v1" + signed_path
-    return base + "/storage/v1/" + signed_path.lstrip("/")
+        raise RuntimeError(f"Supabase signed media upload failed with HTTP {upload.status_code}: {upload.text[:300]}")
+    download_url_response = requests.post(
+        endpoint, headers=headers, json={**common, "action": "download_url"}, timeout=60,
+    )
+    if not download_url_response.ok:
+        raise RuntimeError(f"Autopolis signed download URL failed with HTTP {download_url_response.status_code}: {download_url_response.text[:300]}")
+    video_url = download_url_response.json().get("video_url")
+    if not video_url or not str(video_url).startswith("https://"):
+        raise RuntimeError("Autopolis returned an invalid signed download URL")
+    return video_url
 
 
 def _scene_prompts(script: str, limit: int = 42) -> list[str]:
@@ -463,7 +462,7 @@ def render_and_callback(job_id: str):
         qc["voice_duration_seconds"] = round(voice_duration, 2)
         if qc["size_bytes"] > MAX_VIDEO_BYTES:
             raise RuntimeError("QC failed: final video exceeds 100 MB")
-        media_url = _upload_to_supabase(final, int(payload["task_id"]), job_id)
+        media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
 
     callback_url = check_callback_url(str(payload["callback_url"]))
     callback_token = os.getenv("VIDEO_RENDERER_CALLBACK_TOKEN", "")
