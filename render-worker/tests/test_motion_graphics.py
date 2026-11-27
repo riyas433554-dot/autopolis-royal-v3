@@ -61,6 +61,7 @@ def test_motion_graphics_ffmpeg_commands_are_memory_bounded(tmp_path, monkeypatc
         assert command[command.index("-filter_threads") + 1] == "1"
         assert command[command.index("-threads:v") + 1] == "1"
         assert "s=960x540:fps=18" in command[command.index("-vf") + 1]
+        assert "d=1:s=960x540:fps=18" in command[command.index("-vf") + 1]
     assert calls[-1][calls[-1].index("-filter_threads") + 1] == "1"
 
 
