@@ -26,8 +26,8 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js
-      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js
+      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js
+      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js
       - run: node --test tests/video-renderer.test.js
       - uses: actions/setup-python@v5
         with:
