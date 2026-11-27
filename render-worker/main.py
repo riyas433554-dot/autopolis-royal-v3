@@ -3,6 +3,7 @@ import base64
 import hmac
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -571,6 +572,264 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
         "-c", "copy", source,
     ], capture_output=True, text=True, timeout=1800, check=True)
     return source
+
+
+
+def _parse_srt_time(value: str) -> float:
+    match = re.fullmatch(r"(\\d{2}):(\\d{2}):(\\d{2})[,.](\\d{3})", value.strip())
+    if not match:
+        raise ValueError("Invalid SRT timestamp")
+    hours, minutes, seconds, millis = (int(part) for part in match.groups())
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000.0
+
+
+def _parse_srt_cues(value: str) -> list[dict]:
+    cues = []
+    for block in re.split(r"\\n\\s*\\n", value.strip()):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        time_line = next((line for line in lines if "-->" in line), "")
+        match = re.search(r"(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})\\s*-->\\s*(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})", time_line)
+        if not match:
+            continue
+        try:
+            start = _parse_srt_time(match.group(1))
+            end = _parse_srt_time(match.group(2))
+        except ValueError:
+            continue
+        text_lines = lines[lines.index(time_line) + 1:] if time_line in lines else []
+        text = " ".join(text_lines).strip()
+        if end > start and text:
+            cues.append({"start": start, "end": end, "text": text})
+    return cues
+
+
+def _caption_hook_score(text: str) -> float:
+    words = re.findall(r"[a-z0-9']+", text.lower())
+    hooks = {
+        "secret", "revealed", "finally", "impossible", "surprise", "wait", "truth",
+        "mistake", "danger", "hidden", "amazing", "never", "actually", "suddenly",
+        "why", "how", "because", "but", "instead", "changed", "shocking", "funny",
+    }
+    score = sum(2.0 for word in set(words) if word in hooks)
+    score += min(3, text.count("!") + text.count("?")) * 1.5
+    if 5 <= len(words) <= 24:
+        score += 1.0
+    return score
+
+
+def _select_best_clip_segments(cues: list[dict], duration: float, max_clips: int = 3,
+                               clip_seconds: float = 30.0) -> list[dict]:
+    if duration <= 0 or max_clips <= 0:
+        return []
+    clip_length = min(max(1.0, clip_seconds), duration)
+    candidates = []
+    for cue in cues:
+        try:
+            start = float(cue["start"])
+            end = float(cue["end"])
+            text = str(cue["text"]).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not text or end <= start or start < 0 or end > duration + 0.5:
+            continue
+        center = (start + end) / 2
+        clip_start = max(0.0, min(duration - clip_length, center - clip_length / 2))
+        clip_end = clip_start + clip_length
+        candidates.append({
+            "start_seconds": round(clip_start, 3),
+            "end_seconds": round(clip_end, 3),
+            "hook": text[:240],
+            "score": _caption_hook_score(text),
+        })
+    candidates.sort(key=lambda item: (-item["score"], item["start_seconds"]))
+    selected = []
+    for candidate in candidates:
+        overlaps = any(
+            candidate["start_seconds"] < item["end_seconds"] and
+            candidate["end_seconds"] > item["start_seconds"]
+            for item in selected
+        )
+        if overlaps:
+            continue
+        selected.append(candidate)
+        if len(selected) >= max_clips:
+            break
+    return [{key: value for key, value in item.items() if key != "score"}
+            for item in sorted(selected, key=lambda item: item["start_seconds"])]
+
+
+def _detect_scene_points(source: str) -> list[float]:
+    try:
+        proc = subprocess.run([
+            "ffmpeg", "-hide_banner", "-i", source,
+            "-vf", "select='gt(scene,0.30)',showinfo", "-an", "-f", "null", "-",
+        ], capture_output=True, text=True, timeout=900)
+    except Exception:
+        return []
+    return [float(value) for value in re.findall(r"pts_time:(\\d+(?:\\.\\d+)?)", proc.stderr)
+            if float(value) >= 0]
+
+
+def _fallback_clip_segments(duration: float, scene_points: list[float], max_clips: int = 3,
+                            clip_seconds: float = 30.0) -> list[dict]:
+    if duration <= 0:
+        return []
+    length = min(max(1.0, clip_seconds), duration)
+    centers = scene_points[:]
+    if not centers:
+        centers = [duration * ratio for ratio in (0.25, 0.5, 0.75)]
+    candidates = []
+    for center in centers:
+        start = max(0.0, min(duration - length, center - length / 2))
+        candidates.append({"start_seconds": round(start, 3), "end_seconds": round(start + length, 3), "hook": "scene-change highlight"})
+    selected = []
+    for candidate in candidates:
+        if any(candidate["start_seconds"] < item["end_seconds"] and candidate["end_seconds"] > item["start_seconds"] for item in selected):
+            continue
+        selected.append(candidate)
+        if len(selected) >= max_clips:
+            break
+    return sorted(selected, key=lambda item: item["start_seconds"])
+
+
+def _download_source_video(task_id: int, job_id: str, source_task_id: int, target: str) -> str:
+    base = os.getenv("AUTOPOLIS_PUBLIC_URL", "").rstrip("/")
+    token = os.getenv("VIDEO_RENDERER_TOKEN", "").strip()
+    if not base or not token:
+        raise RuntimeError("Autopolis source-video access requires AUTOPOLIS_PUBLIC_URL and VIDEO_RENDERER_TOKEN")
+    response = requests.post(
+        base + "/api/video-render-storage",
+        headers={"authorization": "Bearer " + token, "content-type": "application/json"},
+        json={"task_id": task_id, "job_id": job_id, "source_task_id": source_task_id, "action": "source_download_url"},
+        timeout=60,
+    )
+    if not response.ok:
+        raise RuntimeError(f"Source video URL request failed with HTTP {response.status_code}: {response.text[:300]}")
+    url = response.json().get("video_url")
+    if not url or not str(url).startswith("https://"):
+        raise RuntimeError("Autopolis returned an invalid source video URL")
+    downloaded = 0
+    with requests.get(url, stream=True, timeout=(20, 900)) as source_response:
+        source_response.raise_for_status()
+        declared = int(source_response.headers.get("content-length") or 0)
+        if declared > MAX_SOURCE_BYTES:
+            raise RuntimeError("Source video exceeds the 1 GB Content Studio input limit")
+        with open(target, "wb") as output:
+            for chunk in source_response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+                if downloaded > MAX_SOURCE_BYTES:
+                    raise RuntimeError("Source video exceeds the 1 GB Content Studio input limit")
+                output.write(chunk)
+    if downloaded <= 0:
+        raise RuntimeError("Source video download was empty")
+    return target
+
+
+def _clip_srt_for_segment(cues: list[dict], start: float, end: float) -> str:
+    entries = []
+    index = 1
+    for cue in cues:
+        cue_start = max(start, float(cue["start"]))
+        cue_end = min(end, float(cue["end"]))
+        if cue_end <= cue_start:
+            continue
+        text = str(cue["text"]).replace("-->", "→")
+        entries.append(f"{index}\\n{_seconds_to_srt(cue_start - start)} --> {_seconds_to_srt(cue_end - start)}\\n{text}\\n")
+        index += 1
+    return "\\n".join(entries)
+
+
+def _render_repurpose_video(job_id: str, payload: dict, temp: str, final: str) -> dict:
+    source = os.path.join(temp, "source-video.mp4")
+    _download_source_video(int(payload["task_id"]), job_id, int(payload["source_task_id"]), source)
+    source_qc = _probe(source)
+    duration = float(source_qc["duration_seconds"])
+    audio_path = os.path.join(temp, "source-audio.wav")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source,
+        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio_path,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+
+    captions_path = os.path.join(temp, "source-captions.srt")
+    caption_error = None
+    cues = []
+    try:
+        transcribed = _transcribe_voice_studio_audio(audio_path, captions_path)
+        if transcribed:
+            with open(transcribed, "r", encoding="utf-8") as captions:
+                cues = _parse_srt_cues(captions.read())
+    except Exception as exc:
+        caption_error = str(exc)[:300]
+
+    segments = payload.get("clip_segments") or []
+    if not segments:
+        segments = _select_best_clip_segments(cues, duration, max_clips=3, clip_seconds=30.0)
+    if not segments:
+        segments = _fallback_clip_segments(duration, _detect_scene_points(source), max_clips=3, clip_seconds=30.0)
+    if not segments:
+        raise RuntimeError("Content Studio could not find any usable scene segments")
+
+    total_seconds = 0.0
+    normalized_segments = []
+    for segment in segments:
+        start = float(segment["start_seconds"])
+        end = float(segment["end_seconds"])
+        if start < 0 or end <= start or end > duration + 0.25:
+            raise RuntimeError("Selected clip segment is outside the source video duration")
+        total_seconds += end - start
+        normalized_segments.append({"start_seconds": start, "end_seconds": end, "hook": str(segment.get("hook") or "")[:240]})
+    if total_seconds > 180:
+        raise RuntimeError("A Content Studio short compilation may not exceed 180 seconds")
+
+    clip_paths = []
+    for index, segment in enumerate(normalized_segments):
+        start = segment["start_seconds"]
+        end = segment["end_seconds"]
+        clip_path = os.path.join(temp, f"content-studio-clip-{index:02d}.mp4")
+        filters = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920", "fps=30", "setsar=1"]
+        clip_captions = _clip_srt_for_segment(cues, start, end)
+        caption_file = None
+        if clip_captions:
+            caption_file = os.path.join(temp, f"clip-{index:02d}.srt")
+            with open(caption_file, "w", encoding="utf-8") as output:
+                output.write(clip_captions)
+            safe_caption_file = caption_file.replace("\\\\", "\\\\\\\\").replace(":", "\\\\:")
+            filters.append("subtitles=filename=" + safe_caption_file + ":force_style='FontName=Arial,FontSize=38,Outline=2,Shadow=1,MarginV=100'")
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{start:.3f}", "-i", source, "-t", f"{end - start:.3f}",
+            "-vf", ",".join(filters), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", clip_path,
+        ], capture_output=True, text=True, timeout=1800, check=True)
+        if not os.path.isfile(clip_path) or not os.path.getsize(clip_path):
+            raise RuntimeError(f"Content Studio produced an empty clip at index {index}")
+        clip_paths.append(clip_path)
+
+    listing_path = os.path.join(temp, "content-studio-concat.txt")
+    with open(listing_path, "w", encoding="utf-8") as listing:
+        for clip_path in clip_paths:
+            listing.write("file " + json.dumps(clip_path) + "\\n")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", listing_path,
+        "-c", "copy", "-movflags", "+faststart", final,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+    qc = _probe(final)
+    qc["size_bytes"] = os.path.getsize(final)
+    qc["source_task_id"] = int(payload["source_task_id"])
+    qc["content_mode"] = "repurpose"
+    qc["content_category"] = payload.get("content_category", "general")
+    qc["platform_targets"] = payload.get("platform_targets", [])
+    qc["selected_segments"] = normalized_segments
+    qc["captions_burned"] = bool(cues)
+    if caption_error:
+        qc["caption_error"] = caption_error
+    if qc["size_bytes"] <= 0 or qc["size_bytes"] > MAX_VIDEO_BYTES:
+        raise RuntimeError("QC failed: Content Studio MP4 must be under 100 MB")
+    return qc
 
 
 def render_and_callback(job_id: str):
