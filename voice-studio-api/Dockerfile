@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng libsn
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --no-deps "kittentts @ https://github.com/KittenML/KittenTTS/releases/download/0.8/kittentts-0.8.0-py3-none-any.whl"
 COPY app.py .
 RUN mkdir -p /data/hf
 EXPOSE 10000
