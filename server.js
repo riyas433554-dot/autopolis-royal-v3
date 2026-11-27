@@ -31,7 +31,7 @@ const handlerFiles = [
   'activity', 'agents', 'agent-run', 'awards', 'bookmarks', 'bootstrap', 'buildings',
   'clients', 'comments', 'companies', 'connected', 'deliverable-files', 'download-deliverable', 'dispatch', 'eccimport', 'lifecycle', 'members',
   'messages', 'notifications', 'outputs', 'oauth', 'posts', 'profiles', 'resources',
-  'reviews', 'scheduled', 'tasks', 'treasury',
+  'reviews', 'scheduled', 'tasks', 'treasury', 'youtube-publish', 'execution-report',
 ];
 
 for (const name of handlerFiles) {
