@@ -29,14 +29,6 @@ export default async function handler(req, res) {
 
   const providerJobId = String(req.body?.job_id || '').trim().slice(0, 160);
   if (!providerJobId) return res.status(400).json({ error: 'job_id is required' });
-  if (req.body?.qc_passed !== true) {
-    return res.status(422).json({ error: 'Renderer callback must confirm qc_passed=true before publication' });
-  }
-
-  let videoUrl;
-  try { videoUrl = safeMediaUrl(req.body?.video_url); }
-  catch (error) { return res.status(400).json({ error: error.message }); }
-
   try {
     const { data: job, error: jobError } = await supabase.from('video_render_jobs')
       .select('*').eq('renderer_job_id', providerJobId).maybeSingle();
@@ -45,12 +37,35 @@ export default async function handler(req, res) {
     if (job.status === 'published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
     if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
+    if (req.body?.qc_passed !== true) {
+      const failure = String(req.body?.error || 'Renderer reported a failed render/QC').slice(0, 500);
+      const { error: failedError } = await supabase.from('video_render_jobs').update({
+        status: 'failed',
+        qc_passed: false,
+        error: failure,
+        updated_at: new Date().toISOString(),
+      }).eq('id', job.id);
+      if (failedError) throw failedError;
+      return res.status(200).json({ ok: true, status: 'failed', error: failure });
+    }
+
+    let videoUrl;
+    try { videoUrl = safeMediaUrl(req.body?.video_url); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+
     const { data: task, error: taskError } = await supabase.from('tasks')
       .select('id,title,description,status,deliverable_type,result').eq('id', job.task_id).maybeSingle();
     if (taskError) throw taskError;
-    if (!task || task.status !== 'done') return res.status(409).json({ error: 'Task must be done before render callback' });
+    if (!task || task.status !== 'done') {
+      const message = 'Task is no longer eligible for public render finalization';
+      await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: message, updated_at: new Date().toISOString() }).eq('id', job.id);
+      return res.status(200).json({ ok: true, status: 'failed', error: message });
+    }
     const durationError = validateVideoDuration(task.description, req.body?.qc_report);
-    if (durationError) return res.status(422).json({ error: durationError });
+    if (durationError) {
+      await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: durationError, updated_at: new Date().toISOString() }).eq('id', job.id);
+      return res.status(200).json({ ok: true, status: 'failed', error: durationError });
+    }
 
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
