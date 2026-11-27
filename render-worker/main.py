@@ -840,32 +840,39 @@ def render_and_callback(job_id: str):
         raise RuntimeError("Render job disappeared from local queue")
     payload = json.loads(job["payload"])
     script = payload["script"]
-    if payload.get("content_mode") == "repurpose":
+    content_mode = payload.get("content_mode", "long_form")
+
+    if content_mode == "repurpose":
         with tempfile.TemporaryDirectory(prefix="autopolis-content-studio-") as temp:
             final = os.path.join(temp, "content-studio-final.mp4")
             qc = _render_repurpose_video(job_id, payload, temp, final)
             media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
     else:
-        content_mode = payload.get("content_mode", "long_form")
-    default_provider = "ai_video_studio" if content_mode == "long_form" else "hf_zerogpu"
-    provider = os.getenv("VIDEO_RENDER_PROVIDER_" + content_mode.upper(), os.getenv("VIDEO_RENDER_PROVIDER", default_provider)).strip().lower()
+        mode_provider = os.getenv("VIDEO_RENDER_PROVIDER_" + content_mode.upper(), "").strip().lower()
+        default_provider = "ai_video_studio" if content_mode == "long_form" else "hf_zerogpu"
+        provider = mode_provider or os.getenv("VIDEO_RENDER_PROVIDER", default_provider).strip().lower()
         if provider == "hf_zerogpu":
             render_source = "hf_zerogpu"
         elif provider == "ai_video_studio":
             render_source = "ai_video_studio"
         else:
             raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+
+        project_id = None
+        scene_count = 0
         if render_source == "ai_video_studio":
             word_count = len(script.split())
-            is_reel = payload.get("deliverable_type") == "reel"
-            scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
+            is_reel = content_mode == "short_form" or payload.get("deliverable_type") in {"reel", "short", "clip", "casual_ai"}
+            default_scene_cap = 180 if content_mode == "long_form" else (6 if is_reel else 12)
+            scene_cap = int(os.getenv("AI_VIDEO_STUDIO_MAX_SCENES", str(default_scene_cap)))
+            scene_count = max(3, min(scene_cap, (word_count + 69) // 70))
             skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
             if is_reel and not skill_id:
                 raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
             project_response = _studio_request("POST", "/projects/", json={
                 "name": payload["title"], "topic": payload["title"], "script": script,
                 "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
-                "num_scenes": scenes, "skill_id": skill_id or None,
+                "num_scenes": scene_count, "skill_id": skill_id or None,
             }).json()
             project_id = project_response.get("id")
             if not project_id:
@@ -886,13 +893,15 @@ def render_and_callback(job_id: str):
                 time.sleep(15)
             else:
                 raise RuntimeError("AI Video Studio render exceeded configured timeout")
-    
+
         with tempfile.TemporaryDirectory(prefix="autopolis-video-") as temp:
             source = os.path.join(temp, "studio-output.mp4")
             voice_audio = os.path.join(temp, "voicestudio-narration.wav")
             final = os.path.join(temp, "autopolis-final.mp4")
             if render_source == "hf_zerogpu":
-                source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp, content_mode)
+                source = _render_with_hf_zerogpu(
+                    script, payload["title"], payload["deliverable_type"], temp, content_mode,
+                )
             else:
                 _download_studio_video(project_id, source)
             source_qc = _probe(source)
@@ -900,7 +909,6 @@ def render_and_callback(job_id: str):
             try:
                 _generate_voice_studio_audio(script, voice_audio)
             except Exception as voice_error:
-                # Preserve VoiceStudio as primary, but let a public Kokoro Space rescue narration.
                 try:
                     _generate_kokoro_hf_audio(script, voice_audio)
                     voice_provider = "Kokoro-HF-fallback"
@@ -920,6 +928,10 @@ def render_and_callback(job_id: str):
             qc = _probe(final)
             qc["size_bytes"] = os.path.getsize(final)
             qc["captions_burned"] = bool(subtitle_path)
+            qc["content_mode"] = content_mode
+            qc["content_category"] = payload.get("content_category", "general")
+            qc["platform_targets"] = payload.get("platform_targets", [])
+            qc["scene_count"] = scene_count
             if caption_error:
                 qc["caption_error"] = caption_error
             qc["voice_provider"] = voice_provider
@@ -933,9 +945,12 @@ def render_and_callback(job_id: str):
     callback_token = os.getenv("VIDEO_RENDERER_CALLBACK_TOKEN", "")
     if not callback_token:
         raise RuntimeError("VIDEO_RENDERER_CALLBACK_TOKEN is required on the worker")
-    callback = requests.post(callback_url, headers={"authorization": "Bearer " + callback_token},
-                             json={"job_id": job_id, "video_url": media_url, "qc_passed": True, "qc_report": qc},
-                             timeout=120)
+    callback = requests.post(
+        callback_url,
+        headers={"authorization": "Bearer " + callback_token},
+        json={"job_id": job_id, "video_url": media_url, "qc_passed": True, "qc_report": qc},
+        timeout=120,
+    )
     if not callback.ok:
         raise RuntimeError(f"Autopolis callback failed with HTTP {callback.status_code}: {callback.text[:400]}")
     return {"video_url": media_url, "qc_report": qc, "callback_status": callback.status_code}
