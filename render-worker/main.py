@@ -167,6 +167,31 @@ def _generate_voice_studio_audio(script: str, target: str):
         raise RuntimeError("VoiceStudio returned an empty narration WAV")
 
 
+def _transcribe_voice_studio_audio(audio_path: str, target: str) -> str | None:
+    """Ask VoiceStudio's local ASR for captions matching the final narration."""
+    base = os.getenv("VOICE_STUDIO_URL", "http://127.0.0.1:3900").rstrip("/")
+    headers = {}
+    api_key = os.getenv("VOICE_STUDIO_API_KEY", "").strip()
+    if api_key:
+        headers["authorization"] = "Bearer " + api_key
+    with open(audio_path, "rb") as audio:
+        response = requests.post(
+            base + "/v1/audio/transcriptions",
+            headers=headers,
+            data={"model": os.getenv("VOICE_STUDIO_ASR_MODEL", "whisper-1"), "response_format": "srt"},
+            files={"file": ("narration.wav", audio, "audio/wav")},
+            timeout=(20, 1800),
+        )
+    if not response.ok:
+        raise RuntimeError(f"VoiceStudio ASR failed with HTTP {response.status_code}: {response.text[:300]}")
+    captions = response.text.strip()
+    if not captions:
+        return None
+    with open(target, "w", encoding="utf-8") as output:
+        output.write(captions + "\n")
+    return target
+
+
 def _probe_audio_duration(path: str) -> float:
     proc = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -217,11 +242,16 @@ def _download_studio_video(project_id: str, target: str):
         raise RuntimeError("AI Video Studio returned an empty MP4")
 
 
-def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float):
+def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float, subtitle_path: str | None = None):
     target_video_bps = int((MAX_VIDEO_BYTES * 0.82 * 8 / max(duration, 1)) - 160000)
     target_video_bps = max(250000, min(target_video_bps, 6000000))
     pad_video = max(0.0, voice_duration - video_duration)
-    video_filter = ["-vf", f"tpad=stop_mode=clone:stop_duration={pad_video:.3f}"] if pad_video > 0.05 else []
+    filters = []
+    if pad_video > 0.05:
+        filters.append(f"tpad=stop_mode=clone:stop_duration={pad_video:.3f}")
+    if subtitle_path:
+        filters.append("subtitles=" + subtitle_path)
+    video_filter = ["-vf", ",".join(filters)] if filters else []
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", voice_audio,
         "-map", "0:v:0", "-map", "1:a:0", *video_filter, "-af", "apad", "-shortest",
@@ -321,9 +351,18 @@ def render_and_callback(job_id: str):
         source_qc = _probe(source)
         _generate_voice_studio_audio(script, voice_audio)
         voice_duration = _probe_audio_duration(voice_audio)
-        _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration)
+        subtitle_path = None
+        caption_error = None
+        try:
+            subtitle_path = _transcribe_voice_studio_audio(voice_audio, os.path.join(temp, "captions.srt"))
+        except Exception as caption_exc:
+            caption_error = str(caption_exc)[:300]
+        _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
         qc = _probe(final)
         qc["size_bytes"] = os.path.getsize(final)
+        qc["captions_burned"] = bool(subtitle_path)
+        if caption_error:
+            qc["caption_error"] = caption_error
         qc["voice_provider"] = "VoiceStudio"
         qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "omnivoice")
         qc["voice_duration_seconds"] = round(voice_duration, 2)
