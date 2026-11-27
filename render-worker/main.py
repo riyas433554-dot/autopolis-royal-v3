@@ -14,6 +14,7 @@ from typing import Literal
 from urllib.parse import quote
 
 import requests
+from gradio_client import Client
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -308,57 +309,140 @@ def _upload_to_supabase(path: str, task_id: int, job_id: str) -> str:
     return base + "/storage/v1/" + signed_path.lstrip("/")
 
 
+def _scene_prompts(script: str, limit: int = 42) -> list[str]:
+    paragraphs = [part.strip() for part in script.splitlines() if part.strip()]
+    words = []
+    for paragraph in paragraphs:
+        words.extend(paragraph.split())
+    if not words:
+        return []
+    chunks = []
+    current = []
+    for word in words:
+        current.append(word)
+        if len(current) >= limit and word.rstrip().endswith((".", "!", "?", ";")):
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
+def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp: str) -> str:
+    """Generate short visual clips through a public Hugging Face ZeroGPU Gradio Space."""
+    space = os.getenv("HF_ZEROGPU_SPACE", "alexcheng0072/wan27-free-video-generator").strip()
+    token = os.getenv("HF_TOKEN", "").strip() or None
+    client = Client(space, token=token, verbose=False)
+    prompts = _scene_prompts(script, limit=int(os.getenv("HF_ZEROGPU_SCENE_WORDS", "42")))
+    if not prompts:
+        raise RuntimeError("No script scenes available for ZeroGPU video generation")
+    max_scenes = int(os.getenv("HF_ZEROGPU_MAX_SCENES", "6" if deliverable_type == "reel" else "12"))
+    prompts = prompts[:max_scenes]
+    ratio = "480x832" if deliverable_type == "reel" else "832x480"
+    duration = int(os.getenv("HF_ZEROGPU_CLIP_SECONDS", "3"))
+    if duration not in (2, 3, 4, 5):
+        raise RuntimeError("HF_ZEROGPU_CLIP_SECONDS must be 2, 3, 4, or 5")
+    clip_paths = []
+    for index, scene in enumerate(prompts):
+        visual_prompt = (
+            f"Cinematic visual for the video titled {title}. "
+            f"Show this scene: {scene}. Natural motion, coherent subject, "
+            "professional camera movement, no text, no subtitles, no logos."
+        )
+        result = client.predict(None, visual_prompt, ratio, duration, api_name="/generate_video")
+        remote_path = result[0] if isinstance(result, (tuple, list)) else result
+        if not remote_path:
+            raise RuntimeError(f"ZeroGPU returned no video for scene {index + 1}")
+        clip_path = os.path.join(temp, f"zerogpu-clip-{index:03d}.mp4")
+        if str(remote_path).startswith(("https://", "http://")):
+            response = requests.get(str(remote_path), timeout=(20, 600))
+            response.raise_for_status()
+            with open(clip_path, "wb") as output:
+                output.write(response.content)
+        else:
+            if not os.path.isfile(str(remote_path)):
+                raise RuntimeError(f"ZeroGPU output file is unavailable for scene {index + 1}")
+            shutil.copyfile(str(remote_path), clip_path)
+        if not os.path.getsize(clip_path):
+            raise RuntimeError(f"ZeroGPU returned an empty clip for scene {index + 1}")
+        clip_paths.append(clip_path)
+    normalized = []
+    for index, clip_path in enumerate(clip_paths):
+        normalized_path = os.path.join(temp, f"normalized-clip-{index:03d}.mp4")
+        width, height = (480, 832) if deliverable_type == "reel" else (832, 480)
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path,
+            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", normalized_path,
+        ], capture_output=True, text=True, timeout=900, check=True)
+        normalized.append(normalized_path)
+    concat_path = os.path.join(temp, "zerogpu-clips.txt")
+    with open(concat_path, "w", encoding="utf-8") as listing:
+        for path in normalized:
+            listing.write("file '" + path.replace("'", "'\\''") + "'\\n")
+    source = os.path.join(temp, "zerogpu-visuals.mp4")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
+        "-c", "copy", source,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+    return source
+
+
 def render_and_callback(job_id: str):
     job = get_job(job_id)
     if not job:
         raise RuntimeError("Render job disappeared from local queue")
     payload = json.loads(job["payload"])
     script = payload["script"]
-    word_count = len(script.split())
-    is_reel = payload.get("deliverable_type") == "reel"
-    scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
-    skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
-    if is_reel and not skill_id:
-        raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
-    project_response = _studio_request("POST", "/projects/", json={
-        "name": payload["title"],
-        "topic": payload["title"],
-        "script": script,
-        "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
-        "num_scenes": scenes,
-        "skill_id": skill_id or None,
-    }).json()
-    project_id = project_response.get("id")
-    if not project_id:
-        raise RuntimeError("AI Video Studio did not return project id")
-    _studio_request("POST", "/generation/start", json={
-        "project_id": project_id,
-        "render_opts": {
-            "subtitles": False,
-            "music": False,
-            "interpolation": True,
-            "upscaling": False,
-            "consistency": "schnell",
-        },
-    })
-
-    deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
-    while time.time() < deadline:
-        project = _studio_request("GET", f"/projects/{quote(project_id, safe='')}").json()
-        status = str(project.get("status", "")).lower()
-        if status == "done":
-            break
-        if status == "error":
-            raise RuntimeError("AI Video Studio project failed: " + str(project.get("error") or "unknown error")[:400])
-        time.sleep(15)
+    provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
+    if provider == "hf_zerogpu":
+        render_source = "hf_zerogpu"
+    elif provider == "ai_video_studio":
+        render_source = "ai_video_studio"
     else:
-        raise RuntimeError("AI Video Studio render exceeded configured timeout")
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+    if render_source == "ai_video_studio":
+        word_count = len(script.split())
+        is_reel = payload.get("deliverable_type") == "reel"
+        scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
+        skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
+        if is_reel and not skill_id:
+            raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
+        project_response = _studio_request("POST", "/projects/", json={
+            "name": payload["title"], "topic": payload["title"], "script": script,
+            "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
+            "num_scenes": scenes, "skill_id": skill_id or None,
+        }).json()
+        project_id = project_response.get("id")
+        if not project_id:
+            raise RuntimeError("AI Video Studio did not return project id")
+        _studio_request("POST", "/generation/start", json={
+            "project_id": project_id,
+            "render_opts": {"subtitles": False, "music": False, "interpolation": True,
+                            "upscaling": False, "consistency": "schnell"},
+        })
+        deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
+        while time.time() < deadline:
+            project = _studio_request("GET", f"/projects/{quote(project_id, safe='')}").json()
+            status = str(project.get("status", "")).lower()
+            if status == "done":
+                break
+            if status == "error":
+                raise RuntimeError("AI Video Studio project failed: " + str(project.get("error") or "unknown error")[:400])
+            time.sleep(15)
+        else:
+            raise RuntimeError("AI Video Studio render exceeded configured timeout")
 
     with tempfile.TemporaryDirectory(prefix="autopolis-video-") as temp:
         source = os.path.join(temp, "studio-output.mp4")
         voice_audio = os.path.join(temp, "voicestudio-narration.wav")
         final = os.path.join(temp, "autopolis-final.mp4")
-        _download_studio_video(project_id, source)
+        if render_source == "hf_zerogpu":
+            source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+        else:
+            _download_studio_video(project_id, source)
         source_qc = _probe(source)
         _generate_voice_studio_audio(script, voice_audio)
         voice_duration = _probe_audio_duration(voice_audio)
