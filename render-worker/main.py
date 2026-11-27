@@ -61,6 +61,16 @@ def init_db():
         db.execute("create index if not exists jobs_status_created on jobs(status, created_at)")
 
 
+def recover_running_jobs() -> int:
+    """Requeue jobs interrupted by a process restart; the renderer is idempotent by job id."""
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as db:
+        return db.execute(
+            "update jobs set status='queued',updated_at=? where status='running'",
+            (now,),
+        ).rowcount
+
+
 def authorized(auth: str | None) -> bool:
     expected = os.getenv("VIDEO_RENDERER_TOKEN", "")
     return bool(expected and auth and hmac.compare_digest(auth, "Bearer " + expected))
@@ -107,6 +117,11 @@ def _studio_request(method: str, path: str, **kwargs):
     if not response.ok:
         raise RuntimeError(f"AI Video Studio API {method} {path} returned HTTP {response.status_code}: {response.text[:300]}")
     return response
+
+
+def _gradio_predict_with_timeout(client: Client, *args, api_name: str, timeout: int):
+    job = client.submit(*args, api_name=api_name)
+    return job.result(timeout=timeout)
 
 
 def _split_tts_text(text: str, limit: int = 3600) -> list[str]:
@@ -181,7 +196,7 @@ def _generate_kokoro_hf_audio(script: str, target: str):
     voice = os.getenv("KOKORO_HF_VOICE", "af_heart").strip()
     speed = float(os.getenv("KOKORO_HF_SPEED", "1.0"))
     client = Client(space, token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
-    result = client.predict(script, speed, voice, api_name="/generate_speech")
+    result = _gradio_predict_with_timeout(client, script, speed, voice, api_name="/generate_speech", timeout=int(os.getenv("KOKORO_HF_TIMEOUT_SECONDS", "300")) )
 
     # Gradio Audio may return a path/URL, a path dictionary, or (sample_rate, waveform).
     source_path = None
@@ -494,7 +509,7 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
             f"Show this scene: {scene}. Natural motion, coherent subject, "
             "professional camera movement, no text, no subtitles, no logos."
         )
-        result = client.predict(None, visual_prompt, ratio, duration, api_name="/generate_video")
+        result = _gradio_predict_with_timeout(client, None, visual_prompt, ratio, duration, api_name="/generate_video", timeout=int(os.getenv("HF_ZEROGPU_TIMEOUT_SECONDS", "300")) )
         remote_path = result[0] if isinstance(result, (tuple, list)) else result
         if not remote_path:
             raise RuntimeError(f"ZeroGPU returned no video for scene {index + 1}")
@@ -657,6 +672,25 @@ def retry_callback_for_job(job_id: str) -> dict:
     return response.json() if response.content else {"status": "callback_accepted"}
 
 
+def report_render_failure(job_id: str, message: str):
+    job = get_job(job_id)
+    if not job:
+        return
+    payload = json.loads(job['payload'])
+    callback_url = check_callback_url(str(payload.get('callback_url') or ''))
+    callback_token = os.getenv('VIDEO_RENDERER_CALLBACK_TOKEN', '').strip()
+    if not callback_token:
+        raise RuntimeError('VIDEO_RENDERER_CALLBACK_TOKEN is required to report render failure')
+    response = requests.post(
+        callback_url,
+        headers={'authorization': 'Bearer ' + callback_token},
+        json={'job_id': job_id, 'qc_passed': False, 'error': str(message)[:1000]},
+        timeout=120,
+    )
+    if not response.ok:
+        raise RuntimeError(f'Autopolis failure callback returned HTTP {response.status_code}: {response.text[:300]}')
+
+
 def process_next_job():
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as db:
@@ -669,15 +703,23 @@ def process_next_job():
                              (now, job_id)).rowcount
         if not changed:
             return True
+    print(f'[render-worker] starting job {job_id}', flush=True)
     try:
         result = render_and_callback(job_id)
         with sqlite3.connect(DB_PATH) as db:
             db.execute("update jobs set status='done',result=?,error=null,updated_at=? where job_id=?",
                        (json.dumps(result), int(time.time()), job_id))
+        print(f'[render-worker] completed job {job_id}', flush=True)
     except Exception as exc:
+        message = str(exc)[:1000]
         with sqlite3.connect(DB_PATH) as db:
             db.execute("update jobs set status='failed',error=?,updated_at=? where job_id=?",
-                       (str(exc)[:1000], int(time.time()), job_id))
+                       (message, int(time.time()), job_id))
+        print(f'[render-worker] failed job {job_id}: {message}', flush=True)
+        try:
+            report_render_failure(job_id, message)
+        except Exception as callback_error:
+            print(f'[render-worker] failure callback failed for {job_id}: {str(callback_error)[:500]}', flush=True)
     return True
 
 
@@ -691,6 +733,9 @@ async def worker_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    recovered = recover_running_jobs()
+    if recovered:
+        print(f'[render-worker] recovered {recovered} interrupted job(s)', flush=True)
     worker = asyncio.create_task(worker_loop())
     yield
     worker.cancel()
