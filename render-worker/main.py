@@ -74,8 +74,8 @@ class RenderJobRequest(BaseModel):
     @model_validator(mode='after')
     def validate_content_mode(self):
         if self.content_mode == 'repurpose':
-            if not self.source_task_id or self.source_task_id == self.task_id or not self.clip_segments:
-                raise ValueError('repurpose requires a different source task and valid clip segments')
+            if not self.source_task_id or self.source_task_id == self.task_id:
+                raise ValueError('repurpose requires a different source task; clips may be auto-selected')
         elif self.source_task_id is not None or self.clip_segments:
             raise ValueError('source task and clip segments are only valid for repurpose mode')
         return self
