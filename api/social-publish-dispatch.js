@@ -28,7 +28,7 @@ async function dispatchOne(job) {
         privacy_status: job.privacy_status || 'public',
       },
     }, response);
-  } else if (job.provider === 'instagram' || job.provider === 'facebook') {
+  } else if (job.provider === 'instagram' || job.provider === 'facebook' || job.provider === 'facebook_reels') {
     await metaPublishHandler({
       method: 'POST', headers: { authorization: 'Bearer ' + ownerToken },
       body: { job_id: job.id },
