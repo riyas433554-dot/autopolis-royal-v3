@@ -1,4 +1,5 @@
 const MODES = new Set(['auto', 'long_form', 'short_form', 'repurpose']);
+const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie', 'short', 'long_video', 'series_episode', 'cartoon', 'documentary', 'explainer', 'casual_ai', 'clip']);
 const TARGETS = new Set([
   'youtube', 'youtube_shorts', 'facebook', 'facebook_reels', 'instagram_reels',
 ]);
@@ -26,7 +27,7 @@ function cleanCategory(value, deliverableType) {
 
 function cleanTargets(value, mode) {
   const defaults = mode === 'short_form' || mode === 'repurpose' ? SHORT_TARGETS : LONG_TARGETS;
-  if (value === undefined || value === null) return [...defaults];
+  if (value === undefined || value === null || (Array.isArray(value) && value.length === 0)) return [...defaults];
   if (!Array.isArray(value) || value.length === 0) throw new Error('platform_targets must be a non-empty array');
   const targets = [...new Set(value.map(item => String(item || '').trim().toLowerCase()))];
   for (const target of targets) {
@@ -88,6 +89,10 @@ export function normalizeContentSpec({
     source_task_id: mode === 'repurpose' ? sourceId : null,
     clip_segments: mode === 'repurpose' ? clipSegments : [],
   };
+}
+
+export function isVideoDeliverable(value) {
+  return VIDEO_TYPES.has(String(value || '').trim().toLowerCase());
 }
 
 export const CONTENT_MODE_VALUES = [...MODES];
