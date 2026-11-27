@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       const content_category = typeof body.content_category === 'string' ? body.content_category.trim().slice(0, 120) : '';
       const validTargets = ['youtube', 'youtube_shorts', 'facebook', 'facebook_reels', 'instagram_reels'];
       const defaultTargets = content_mode === 'short_form' || content_mode === 'repurpose' || ['reel', 'short', 'clip', 'casual_ai'].includes(deliverable_type)
-        ? ['youtube_shorts', 'instagram_reels', 'facebook_reels'] : ['youtube', 'facebook'];
+        ? ['youtube_shorts', 'instagram_reels', 'facebook_reels'] : ['youtube', 'facebook', 'youtube_shorts', 'instagram_reels', 'facebook_reels'];
       const platform_targets = body.platform_targets === undefined ? defaultTargets : body.platform_targets;
       if (!Array.isArray(platform_targets) || platform_targets.length === 0 || platform_targets.some(target => !validTargets.includes(target))) {
         return res.status(400).json({ error: 'platform_targets must be a non-empty array of supported destinations' });
