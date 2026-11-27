@@ -127,3 +127,35 @@ def test_completed_render_retries_callback_without_rerender(monkeypatch, tmp_pat
     assert calls[0][0] == payload["callback_url"]
     assert calls[0][1]["headers"]["authorization"] == "Bearer callback-secret"
     assert calls[0][1]["json"]["qc_passed"] is True
+
+
+def test_zero_gpu_scene_prompts_split_script():
+    prompts = main._scene_prompts("Scene one. More detail.\nScene two! Final line", limit=3)
+    assert prompts
+    assert " ".join(prompts).split() == "Scene one. More detail. Scene two! Final line".split()
+
+
+def test_zero_gpu_provider_calls_public_space_and_makes_portrait_clips(monkeypatch, tmp_path):
+    calls = []
+    clip = tmp_path / "remote-clip.mp4"
+    clip.write_bytes(b"test-video")
+    class FakeClient:
+        def __init__(self, space, token=None, verbose=False):
+            calls.append({"space": space, "token": token})
+        def predict(self, image, prompt, ratio, duration, api_name):
+            calls.append({"image": image, "prompt": prompt, "ratio": ratio, "duration": duration, "api_name": api_name})
+            return (str(clip), 123)
+    def fake_run(args, **kwargs):
+        if args[-1].endswith(".mp4"):
+            open(args[-1], "wb").write(b"fake-output")
+        return type("Completed", (), {"stdout": "", "stderr": ""})()
+    monkeypatch.setattr(main, "Client", FakeClient)
+    monkeypatch.setattr(main.subprocess, "run", fake_run)
+    monkeypatch.setenv("HF_ZEROGPU_SPACE", "test/space")
+    monkeypatch.setenv("HF_ZEROGPU_CLIP_SECONDS", "3")
+    output = main._render_with_hf_zerogpu("A hero walks. A city glows.", "Test", "reel", str(tmp_path))
+    assert output.endswith("zerogpu-visuals.mp4")
+    assert calls[0]["space"] == "test/space"
+    assert calls[1]["ratio"] == "480x832"
+    assert calls[1]["duration"] == 3
+    assert calls[1]["api_name"] == "/generate_video"
