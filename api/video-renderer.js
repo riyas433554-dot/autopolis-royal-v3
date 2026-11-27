@@ -73,6 +73,8 @@ export function extractYoutubeDescription(result, fallback = '') {
   const remainder = text.slice(heading.index + heading[0].length);
   const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   let section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder).trim();
+  const separated = section.split(/\r?\n\s*---+\s*\r?\n/);
+  if (separated.length >= 3) section = separated[1].trim();
   section = section.replace(/^```[^\n]*\n/, '').replace(/\n```\s*$/, '').trim();
   return (section || String(fallback || '').trim()).slice(0, 5000);
 }
