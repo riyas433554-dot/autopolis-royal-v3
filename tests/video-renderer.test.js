@@ -118,3 +118,42 @@ test('extracts timed paragraph narration and skips music/end-card notes', () => 
   ].join('\n');
   assert.equal(extractVideoNarration(result), 'Autopolis Royal V3 is live.\nTasks are created in a queue.');
 });
+
+test('extracts actual Autopolis deliverable voiceover and skips section labels', () => {
+  const result = [
+    '## [DELIVERABLE] Voiceover Script (45–60 seconds)',
+    'Purpose: launch explainer.',
+    '---',
+    '**[0:00–0:05] Hook**',
+    'Autopolis Royal V3 is live.',
+    '',
+    '**[0:05–0:15] Context**',
+    'City tasks are created in a queue.',
+    '',
+    '**[0:15–0:30] Mechanism**',
+    'Agents claim tasks using database leases.',
+    '',
+    '## [DELIVERABLE] Scene-by-Scene Visual Plan',
+    'Do not narrate the visual plan.',
+  ].join('\n');
+  assert.equal(
+    extractVideoNarration(result),
+    'Autopolis Royal V3 is live.\nCity tasks are created in a queue.\nAgents claim tasks using database leases.',
+  );
+});
+
+test('extracts actual deliverable YouTube title and description headings', () => {
+  const result = [
+    '## [DELIVERABLE] YouTube Title',
+    'Autopolis Royal V3 — City Task Queue Launch',
+    '',
+    '## [DELIVERABLE] YouTube Description',
+    'Autopolis Royal V3 is live.',
+    'Tasks are created in a queue.',
+    '',
+    '## [DELIVERABLE] Thumbnail Concept',
+    'Not part of description.',
+  ].join('\n');
+  assert.equal(extractYoutubeTitle(result, 'fallback'), 'Autopolis Royal V3 — City Task Queue Launch');
+  assert.equal(extractYoutubeDescription(result, 'fallback'), 'Autopolis Royal V3 is live.\nTasks are created in a queue.');
+});

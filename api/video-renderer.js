@@ -5,7 +5,7 @@ const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
 export function extractVideoNarration(result) {
   const text = typeof result === 'string' ? result.trim() : '';
   if (!text) return '';
-  const heading = /^#{1,6}\s*(?:voiceover|voice-over|narration)\s+script\b[^\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:\[[^\]]+\]\s*)?(?:voiceover|voice-over|narration)\s+script\b[^\n]*$/im.exec(text);
   if (!heading) return text;
 
   const start = heading.index + heading[0].length;
@@ -29,11 +29,12 @@ export function extractVideoNarration(result) {
       continue;
     }
 
-    const timed = line.match(/^\s*\*{0,2}\s*\[?(\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?)\]?\s*\*{0,2}\s*(.*?)\s*$/);
+    const timed = line.match(/^\s*\*{0,2}\s*\[?(\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?)\]?\s*\*{0,2}\s*(.*?)\s*\*{0,2}\s*$/);
     if (timed) {
       const inlineSpoken = cleanSpokenLine(timed[2]);
-      if (inlineSpoken) spokenLines.push(inlineSpoken);
-      pendingTimedLine = !inlineSpoken;
+      const isSectionLabel = /^(?:hook|opening|context|mechanism|render(?:\s+and\s+publish)?|close|closing)\b/i.test(inlineSpoken);
+      if (inlineSpoken && !isSectionLabel) spokenLines.push(inlineSpoken);
+      pendingTimedLine = !inlineSpoken || isSectionLabel;
       continue;
     }
 
@@ -51,24 +52,29 @@ export function extractVideoNarration(result) {
 
 export function extractYoutubeTitle(result, fallback = '') {
   const text = typeof result === 'string' ? result : '';
-  const heading = /^#{1,6}\s*(?:youtube\s+)?title\b[^\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:\[[^\]]+\]\s*)?(?:youtube\s+)?title\b[^\n]*$/im.exec(text);
   if (!heading) return String(fallback || '').trim().slice(0, 100);
   const remainder = text.slice(heading.index + heading[0].length);
   const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
-  const section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder)
+  let section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder).trim();
+  const separated = section.split(/\r?\n\s*---+\s*\r?\n/);
+  if (separated.length >= 3) section = separated[1].trim();
+  const title = section
     .split(/\r?\n/)
     .map(line => line.replace(/^\s*[-*]\s*/, '').replace(/\*\*/g, '').trim())
     .find(Boolean);
-  return String(section || fallback || '').trim().slice(0, 100);
+  return String(title || fallback || '').trim().slice(0, 100);
 }
 
 export function extractYoutubeDescription(result, fallback = '') {
   const text = typeof result === 'string' ? result : '';
-  const heading = /^#{1,6}\s*(?:youtube\s+)?description\b[^\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:\[[^\]]+\]\s*)?(?:youtube\s+)?description\b[^\n]*$/im.exec(text);
   if (!heading) return String(fallback || '').trim().slice(0, 5000);
   const remainder = text.slice(heading.index + heading[0].length);
   const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   let section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder).trim();
+  const separated = section.split(/\r?\n\s*---+\s*\r?\n/);
+  if (separated.length >= 3) section = separated[1].trim();
   section = section.replace(/^```[^\n]*\n/, '').replace(/\n```\s*$/, '').trim();
   return (section || String(fallback || '').trim()).slice(0, 5000);
 }
