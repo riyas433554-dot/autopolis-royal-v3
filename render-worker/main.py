@@ -608,6 +608,7 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     output = os.path.join(temp, "motion-graphics-source.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_threads", "1", "-filter_complex_threads", "1",
         "-f", "concat", "-safe", "0", "-i", concat_path,
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
         "-t", f"{total_seconds:.3f}",
