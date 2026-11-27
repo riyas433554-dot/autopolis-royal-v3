@@ -1,12 +1,10 @@
-import { normalizeContentSpec } from './content-contract.js';
-
-const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie', 'short', 'long_video', 'series_episode', 'cartoon', 'documentary', 'explainer', 'casual_ai', 'clip']);
+import { isVideoDeliverable, normalizeContentSpec } from './content-contract.js';
 
 export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) {
   const taskId = Number(task?.id);
   if (!Number.isInteger(taskId) || taskId <= 0) throw new Error('A valid task id is required');
   const type = String(task?.deliverable_type || '').trim().toLowerCase();
-  if (!VIDEO_TYPES.has(type)) throw new Error('Task must be a video deliverable');
+  if (!isVideoDeliverable(type)) throw new Error('Task must be a video deliverable');
   const title = String(task?.title || '').trim();
   const script = typeof result === 'string' ? result.trim() : '';
   if (!title) throw new Error('Video title is required');
