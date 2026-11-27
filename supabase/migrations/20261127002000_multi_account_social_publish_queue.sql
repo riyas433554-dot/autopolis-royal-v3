@@ -1,4 +1,8 @@
 -- Multi-account durable social publishing, per-account pacing, and stale-claim recovery.
+alter table public.tasks add column if not exists auto_repurpose boolean not null default false;
+create unique index if not exists tasks_auto_repurpose_source_unique_idx
+  on public.tasks(source_video_task_id) where auto_repurpose=true and source_video_task_id is not null;
+
 alter table public.social_publish_jobs drop constraint if exists social_publish_jobs_provider_check;
 alter table public.social_publish_jobs add constraint social_publish_jobs_provider_check
   check (provider in ('youtube','instagram','facebook','facebook_reels'));
