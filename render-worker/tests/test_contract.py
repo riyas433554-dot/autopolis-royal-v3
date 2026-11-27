@@ -49,3 +49,33 @@ def test_idempotency_returns_same_job_and_requeues_failed(monkeypatch, tmp_path)
     retry_id, retry_status = main.enqueue_job("autopolis-task-17", payload)
     assert retry_id == first_id
     assert retry_status == "queued"
+
+
+def test_voice_studio_text_chunks_are_bounded():
+    text = "sentence. " * 800
+    chunks = main._split_tts_text(text, limit=120)
+    assert chunks
+    assert all(len(chunk) <= 120 for chunk in chunks)
+    assert " ".join(chunks).split() == text.split()
+
+
+def test_voice_studio_tts_uses_local_openai_compatible_endpoint(monkeypatch, tmp_path):
+    calls = []
+    class FakeResponse:
+        ok = True
+        content = b"RIFFfake-wav"
+        headers = {"content-type": "audio/wav"}
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+    monkeypatch.setattr(main.requests, "post", fake_post)
+    monkeypatch.setenv("VOICE_STUDIO_URL", "http://127.0.0.1:3900")
+    monkeypatch.setenv("VOICE_STUDIO_MODEL", "test-engine")
+    monkeypatch.setenv("VOICE_STUDIO_VOICE", "test-voice")
+    target = str(tmp_path / "voice.wav")
+    main._generate_voice_studio_audio("A short narration.", target)
+    assert calls[0][0] == "http://127.0.0.1:3900/v1/audio/speech"
+    assert calls[0][1]["json"]["model"] == "test-engine"
+    assert calls[0][1]["json"]["voice"] == "test-voice"
+    assert calls[0][1]["json"]["response_format"] == "wav"
+    assert open(target, "rb").read() == b"RIFFfake-wav"
