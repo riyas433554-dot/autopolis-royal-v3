@@ -15,6 +15,7 @@ export function extractVideoNarration(result) {
   const spokenLines = [];
   let pendingTimedLine = false;
   const cleanSpokenLine = value => value
+    .replace(/^\s*>\s?/, '')
     .replace(/\*\*/g, '')
     .replaceAll(String.fromCharCode(96), '')
     .replace(/^\s*(?:hook|opening|closing|voiceover|vo)\s*:\s*/i, '')
@@ -29,7 +30,7 @@ export function extractVideoNarration(result) {
       continue;
     }
 
-    const timed = line.match(/^\s*\*{0,2}\s*\[?(\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?)\]?\s*\*{0,2}\s*(.*?)\s*\*{0,2}\s*$/);
+    const timed = line.match(/^\s*\*{0,2}\s*(?:(?:scene|shot)\s+\d+\s*)?(?:\(\s*)?\[?(\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?)\]?\s*\)?\s*\*{0,2}\s*(.*?)\s*\*{0,2}\s*$/i);
     if (timed) {
       const inlineSpoken = cleanSpokenLine(timed[2]);
       const isSectionLabel = /^(?:hook|opening|context|mechanism|render(?:\s+and\s+publish)?|close|closing)\b/i.test(inlineSpoken);
