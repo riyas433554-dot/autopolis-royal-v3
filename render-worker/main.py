@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -106,6 +107,77 @@ def _studio_request(method: str, path: str, **kwargs):
     return response
 
 
+def _split_tts_text(text: str, limit: int = 3600) -> list[str]:
+    words = text.split()
+    chunks = []
+    current = ""
+    for word in words:
+        candidate = (current + " " + word).strip()
+        if len(candidate) > limit and current:
+            chunks.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _generate_voice_studio_audio(script: str, target: str):
+    """Use the separate VoiceStudio local API for the final narration track."""
+    base = os.getenv("VOICE_STUDIO_URL", "http://127.0.0.1:3900").rstrip("/")
+    headers = {}
+    api_key = os.getenv("VOICE_STUDIO_API_KEY", "").strip()
+    if api_key:
+        headers["authorization"] = "Bearer " + api_key
+    model = os.getenv("VOICE_STUDIO_MODEL", "omnivoice").strip()
+    voice = os.getenv("VOICE_STUDIO_VOICE", "default").strip()
+    language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
+    chunks = _split_tts_text(script)
+    if not chunks:
+        raise RuntimeError("VoiceStudio narration script is empty")
+    with tempfile.TemporaryDirectory(prefix="autopolis-voicestudio-") as temp:
+        audio_paths = []
+        for index, chunk in enumerate(chunks):
+            body = {"model": model, "input": chunk, "voice": voice, "response_format": "wav"}
+            if language:
+                body["language"] = language
+            response = requests.post(base + "/v1/audio/speech", headers=headers, json=body, timeout=(20, 900))
+            if not response.ok:
+                raise RuntimeError(f"VoiceStudio TTS failed with HTTP {response.status_code}: {response.text[:300]}")
+            if not response.content or not response.headers.get("content-type", "").lower().startswith("audio/"):
+                raise RuntimeError("VoiceStudio did not return an audio/* response")
+            chunk_path = os.path.join(temp, f"voice-{index:04d}.wav")
+            with open(chunk_path, "wb") as output:
+                output.write(response.content)
+            audio_paths.append(chunk_path)
+        if len(audio_paths) == 1:
+            shutil.copyfile(audio_paths[0], target)
+        else:
+            concat_path = os.path.join(temp, "audio-list.txt")
+            with open(concat_path, "w", encoding="utf-8") as listing:
+                for audio_path in audio_paths:
+                    listing.write("file '" + audio_path.replace("'", "'\\''") + "'\n")
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", target,
+            ], capture_output=True, text=True, timeout=1800, check=True)
+    if not os.path.getsize(target):
+        raise RuntimeError("VoiceStudio returned an empty narration WAV")
+
+
+def _probe_audio_duration(path: str) -> float:
+    proc = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path,
+    ], capture_output=True, text=True, timeout=60, check=True)
+    duration = float(proc.stdout.strip() or 0)
+    if duration <= 0:
+        raise RuntimeError("VoiceStudio narration has no valid duration")
+    return duration
+
+
 def _probe(path: str) -> dict:
     proc = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path],
@@ -145,11 +217,14 @@ def _download_studio_video(project_id: str, target: str):
         raise RuntimeError("AI Video Studio returned an empty MP4")
 
 
-def _compress_video(source: str, target: str, duration: float):
+def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float):
     target_video_bps = int((MAX_VIDEO_BYTES * 0.82 * 8 / max(duration, 1)) - 160000)
     target_video_bps = max(250000, min(target_video_bps, 6000000))
+    pad_video = max(0.0, voice_duration - video_duration)
+    video_filter = ["-vf", f"tpad=stop_mode=clone:stop_duration={pad_video:.3f}"] if pad_video > 0.05 else []
     subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-i", voice_audio,
+        "-map", "0:v:0", "-map", "1:a:0", *video_filter, "-af", "apad", "-shortest",
         "-c:v", "libx264", "-preset", "veryfast", "-b:v", str(target_video_bps),
         "-maxrate", str(target_video_bps), "-bufsize", str(target_video_bps * 2),
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
@@ -210,7 +285,7 @@ def render_and_callback(job_id: str):
         "script": script,
         "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
         "num_scenes": scenes,
-        "skill_id": os.getenv("AI_VIDEO_STUDIO_SKILL_ID") or None,
+        "skill_id": (os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if payload.get("deliverable_type") == "reel" else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")) or None,
     }).json()
     project_id = project_response.get("id")
     if not project_id:
@@ -218,8 +293,8 @@ def render_and_callback(job_id: str):
     _studio_request("POST", "/generation/start", json={
         "project_id": project_id,
         "render_opts": {
-            "subtitles": True,
-            "music": True,
+            "subtitles": False,
+            "music": False,
             "interpolation": True,
             "upscaling": False,
             "consistency": "schnell",
@@ -240,12 +315,18 @@ def render_and_callback(job_id: str):
 
     with tempfile.TemporaryDirectory(prefix="autopolis-video-") as temp:
         source = os.path.join(temp, "studio-output.mp4")
+        voice_audio = os.path.join(temp, "voicestudio-narration.wav")
         final = os.path.join(temp, "autopolis-final.mp4")
         _download_studio_video(project_id, source)
         source_qc = _probe(source)
-        _compress_video(source, final, source_qc["duration_seconds"])
+        _generate_voice_studio_audio(script, voice_audio)
+        voice_duration = _probe_audio_duration(voice_audio)
+        _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration)
         qc = _probe(final)
         qc["size_bytes"] = os.path.getsize(final)
+        qc["voice_provider"] = "VoiceStudio"
+        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "omnivoice")
+        qc["voice_duration_seconds"] = round(voice_duration, 2)
         if qc["size_bytes"] > MAX_VIDEO_BYTES:
             raise RuntimeError("QC failed: final video exceeds 100 MB")
         media_url = _upload_to_supabase(final, int(payload["task_id"]), job_id)
