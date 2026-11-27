@@ -374,7 +374,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result, output_id: outputRecord?.id || null , video_render: videoRender });
+    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result, output_id: outputRecord?.id || null, video_render: videoRender });
   } catch (error) {
     const rawMessage = String(error?.message || error).slice(0, 1000);
     const message = apiKey ? rawMessage.replaceAll(apiKey, '[redacted]') : rawMessage;
