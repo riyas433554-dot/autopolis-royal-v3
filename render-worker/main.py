@@ -17,7 +17,7 @@ from urllib.parse import quote
 import requests
 from gradio_client import Client
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 DB_PATH = os.getenv("RENDER_WORKER_DB", "/data/render-worker.sqlite")
 AI_STUDIO_URL = os.getenv("AI_VIDEO_STUDIO_URL", "http://127.0.0.1:7860").rstrip("/")
@@ -25,22 +25,60 @@ MAX_VIDEO_BYTES = 100 * 1024 * 1024
 MAX_SOURCE_BYTES = 1024 * 1024 * 1024
 
 
+class ClipSegment(BaseModel):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
+    hook: str = Field(default='', max_length=240)
+
+    @model_validator(mode='after')
+    def validate_range(self):
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError('clip segment end_seconds must be greater than start_seconds')
+        return self
+
+
 class RenderJobRequest(BaseModel):
     task_id: int = Field(gt=0)
     title: str = Field(min_length=1, max_length=100)
-    description: str = Field(default="", max_length=5000)
-    deliverable_type: Literal["video", "reel", "anime", "movie"]
+    description: str = Field(default='', max_length=5000)
+    deliverable_type: str = Field(min_length=1, max_length=40)
     script: str = Field(min_length=1, max_length=120000)
-    profile: str = Field(default="cinematic", max_length=40)
+    profile: str = Field(default='cinematic', max_length=40)
+    content_mode: Literal['long_form', 'short_form', 'repurpose'] = 'long_form'
+    content_category: str = Field(default='general', max_length=120)
+    platform_targets: list[Literal['youtube', 'youtube_shorts', 'facebook', 'facebook_reels', 'instagram_reels']] = Field(default_factory=lambda: ['youtube', 'facebook'], min_length=1, max_length=5)
+    source_task_id: int | None = Field(default=None, gt=0)
+    clip_segments: list[ClipSegment] = Field(default_factory=list, max_length=12)
     callback_url: HttpUrl
 
-    @field_validator("title", "script")
+    @field_validator('title', 'script')
     @classmethod
     def reject_blank_text(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("value must not be blank")
+            raise ValueError('value must not be blank')
         return value
 
+    @field_validator('deliverable_type')
+    @classmethod
+    def normalize_deliverable_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError('deliverable_type must not be blank')
+        return normalized
+
+    @field_validator('content_category')
+    @classmethod
+    def normalize_content_category(cls, value: str) -> str:
+        return value.strip() or 'general'
+
+    @model_validator(mode='after')
+    def validate_content_mode(self):
+        if self.content_mode == 'repurpose':
+            if not self.source_task_id or self.source_task_id == self.task_id or not self.clip_segments:
+                raise ValueError('repurpose requires a different source task and valid clip segments')
+        elif self.source_task_id is not None or self.clip_segments:
+            raise ValueError('source task and clip segments are only valid for repurpose mode')
+        return self
 
 def init_db():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
