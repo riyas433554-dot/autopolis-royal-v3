@@ -484,8 +484,8 @@ MOTION_GRAPHICS_HEADINGS = [
 
 def build_motion_graphics_scenes(script: str, title: str) -> list[dict[str, str]]:
     """Create five short, narration-aligned text cards for the no-GPU fallback."""
-    cleaned = re.sub(r"\\s+", " ", str(script or "")).strip()
-    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", cleaned) if part.strip()]
+    cleaned = re.sub(r"\s+", " ", str(script or "")).strip()
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", cleaned) if part.strip()]
     if not sentences:
         sentences = [cleaned or str(title or "Autopolis Royal V3")]
     if len(sentences) < 5:
@@ -601,7 +601,7 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     concat_path = os.path.join(temp, "motion-graphics-clips.txt")
     with open(concat_path, "w", encoding="utf-8") as listing:
         for path in clips:
-            listing.write("file " + json.dumps(path) + "\\n")
+            listing.write("file " + json.dumps(path) + "\n")
     output = os.path.join(temp, "motion-graphics-source.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
