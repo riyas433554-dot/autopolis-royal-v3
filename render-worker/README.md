@@ -15,9 +15,10 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
 ## Run
 
 1. Install and start AI Video Studio on the GPU machine; keep its backend bound to localhost (7860). Install/download model weights according to its upstream docs.
-2. Run this bridge on the same GPU host. The simplest Docker option is host networking (`--network host`) so the bridge can reach AI Video Studio's default `127.0.0.1:7860`; set `AI_VIDEO_STUDIO_URL` accordingly. Do not expose port 7860 publicly; the Studio API itself has no authentication. If using a normal bridge network, bind Studio only to a private interface and firewall it from the public internet.
-3. Build this container with a persistent volume mounted at `/data` and expose port 8080 over HTTPS behind a reverse proxy.
-4. Set secrets in the worker host:
+2. Install/start [VoiceStudio's headless backend](https://github.com/debpalash/VoiceStudio) on the same GPU host at localhost:3900, choose a TTS engine/model, and review the model/voice license. The default OmniVoice weights are CC-BY-NC; do not use them for monetized output without separate rights.
+3. Run this bridge on the same GPU host. The simplest Docker option is host networking (`--network host`) so the bridge can reach AI Video Studio's default `127.0.0.1:7860`; set `AI_VIDEO_STUDIO_URL` accordingly. Do not expose port 7860 publicly; the Studio API itself has no authentication. If using a normal bridge network, bind Studio only to a private interface and firewall it from the public internet.
+4. Build this container with a persistent volume mounted at `/data` and expose port 8080 over HTTPS behind a reverse proxy.
+5. Set secrets in the worker host:
    - `VIDEO_RENDERER_TOKEN` — must match Autopolis `VIDEO_RENDERER_TOKEN`
    - `VIDEO_RENDERER_CALLBACK_TOKEN` — must match Autopolis `VIDEO_RENDERER_CALLBACK_TOKEN`
    - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
@@ -27,7 +28,7 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
    - optional `VOICE_STUDIO_API_KEY`, `VOICE_STUDIO_LANGUAGE`, `VOICE_STUDIO_ASR_MODEL`
    - optional `SUPABASE_VIDEO_BUCKET` (default `autopolis-media`), `AI_VIDEO_STUDIO_VOICE`, `AI_VIDEO_STUDIO_SKILL_ID`
    - `AI_VIDEO_STUDIO_SOCIAL_SKILL_ID` is required for reel tasks and must point to a verified vertical/reel skill
-5. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`.
+6. Configure Autopolis with `VIDEO_RENDERER_URL` (bridge HTTPS URL), `VIDEO_RENDERER_TOKEN`, `VIDEO_RENDERER_CALLBACK_TOKEN`, and `AUTOPOLIS_PUBLIC_URL`.
 
 ## API
 
