@@ -68,7 +68,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!isOwner(req)) return res.status(401).json({ error: 'Owner lifecycle token required' });
 
-  const batchSize = Math.max(1, Math.min(10, Number.isSafeInteger(Number(req.body?.batch_size)) ? Number(req.body.batch_size) : 4));
+  const batchSize = Math.max(1, Math.min(2, Number.isSafeInteger(Number(req.body?.batch_size)) ? Number(req.body.batch_size) : 1));
   const minInterval = Math.max(60, Math.min(86400, Number(process.env.SOCIAL_ACCOUNT_MIN_INTERVAL_SECONDS || 900)));
   const dailyLimit = Math.max(1, Math.min(50, Number(process.env.SOCIAL_ACCOUNT_DAILY_LIMIT || 6)));
   try {
