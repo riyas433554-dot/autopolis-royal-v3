@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, extractVideoNarration, extractYoutubeDescription, validateVideoDuration } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -41,7 +41,7 @@ test('dispatches to configured renderer with bearer auth and stable idempotency 
   });
   assert.equal(request.url, 'https://renderer.example/v1/jobs');
   assert.equal(request.options.headers.authorization, 'Bearer secret');
-  assert.equal(request.options.headers['idempotency-key'], 'autopolis-task-42');
+  assert.match(request.options.headers['idempotency-key'], /^autopolis-task-42-[a-f0-9]{16}$/);
   assert.equal(JSON.parse(request.options.body).task_id, 42);
   assert.equal(result.job_id, 'render-123');
 });
@@ -55,4 +55,30 @@ test('fails closed when renderer configuration is absent or response is not acce
     env: { VIDEO_RENDERER_URL: 'https://renderer.example', VIDEO_RENDERER_TOKEN: 'secret' },
     fetchImpl: async () => new Response(JSON.stringify({ error: 'busy' }), { status: 503 }),
   }), /renderer rejected job/);
+});
+
+test('extracts only spoken lines from a markdown voiceover table', () => {
+  const result = [
+    '# Campaign',
+    '## Voiceover Script (45–60 seconds)',
+    '| Time | Voiceover | On-screen text |',
+    '|---|---|---|',
+    '| 0:00–0:05 | **Hook:** Three systems. One workflow. | Three systems |',
+    '| 0:05–0:10 | Tasks move to an eligible agent. | Task routing |',
+    '## Visual Plan',
+    'Do not narrate this section.',
+  ].join('\\n');
+  assert.equal(extractVideoNarration(result), 'Three systems. One workflow.\\nTasks move to an eligible agent.');
+});
+
+test('preserves a plain-text script and extracts a clean YouTube description', () => {
+  assert.equal(extractVideoNarration('A plain spoken script.'), 'A plain spoken script.');
+  const result = '## Description\\n\\n```\\nA concise public description.\\n#Autopolis\\n```\\n\\n## Thumbnail\\nNot part of the description.';
+  assert.equal(extractYoutubeDescription(result, 'fallback'), 'A concise public description.\\n#Autopolis');
+});
+
+test('duration QC enforces a requested 45–60 second public short', () => {
+  assert.equal(validateVideoDuration('Create a 45–60 second YouTube short', { duration_seconds: 52 }), null);
+  assert.match(validateVideoDuration('Create a 45–60 second YouTube short', { duration_seconds: 78 }), /45–60 seconds/);
+  assert.equal(validateVideoDuration('Create a 30 second reel', { duration_seconds: 78 }), null);
 });
