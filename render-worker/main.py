@@ -838,86 +838,92 @@ def render_and_callback(job_id: str):
         raise RuntimeError("Render job disappeared from local queue")
     payload = json.loads(job["payload"])
     script = payload["script"]
-    provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
-    if provider == "hf_zerogpu":
-        render_source = "hf_zerogpu"
-    elif provider == "ai_video_studio":
-        render_source = "ai_video_studio"
+    if payload.get("content_mode") == "repurpose":
+        with tempfile.TemporaryDirectory(prefix="autopolis-content-studio-") as temp:
+            final = os.path.join(temp, "content-studio-final.mp4")
+            qc = _render_repurpose_video(job_id, payload, temp, final)
+            media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
     else:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
-    if render_source == "ai_video_studio":
-        word_count = len(script.split())
-        is_reel = payload.get("deliverable_type") == "reel"
-        scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
-        skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
-        if is_reel and not skill_id:
-            raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
-        project_response = _studio_request("POST", "/projects/", json={
-            "name": payload["title"], "topic": payload["title"], "script": script,
-            "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
-            "num_scenes": scenes, "skill_id": skill_id or None,
-        }).json()
-        project_id = project_response.get("id")
-        if not project_id:
-            raise RuntimeError("AI Video Studio did not return project id")
-        _studio_request("POST", "/generation/start", json={
-            "project_id": project_id,
-            "render_opts": {"subtitles": False, "music": False, "interpolation": True,
-                            "upscaling": False, "consistency": "schnell"},
-        })
-        deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
-        while time.time() < deadline:
-            project = _studio_request("GET", f"/projects/{quote(project_id, safe='')}").json()
-            status = str(project.get("status", "")).lower()
-            if status == "done":
-                break
-            if status == "error":
-                raise RuntimeError("AI Video Studio project failed: " + str(project.get("error") or "unknown error")[:400])
-            time.sleep(15)
+        provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
+        if provider == "hf_zerogpu":
+            render_source = "hf_zerogpu"
+        elif provider == "ai_video_studio":
+            render_source = "ai_video_studio"
         else:
-            raise RuntimeError("AI Video Studio render exceeded configured timeout")
-
-    with tempfile.TemporaryDirectory(prefix="autopolis-video-") as temp:
-        source = os.path.join(temp, "studio-output.mp4")
-        voice_audio = os.path.join(temp, "voicestudio-narration.wav")
-        final = os.path.join(temp, "autopolis-final.mp4")
-        if render_source == "hf_zerogpu":
-            source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
-        else:
-            _download_studio_video(project_id, source)
-        source_qc = _probe(source)
-        voice_provider = "VoiceStudio"
-        try:
-            _generate_voice_studio_audio(script, voice_audio)
-        except Exception as voice_error:
-            # Preserve VoiceStudio as primary, but let a public Kokoro Space rescue narration.
+            raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+        if render_source == "ai_video_studio":
+            word_count = len(script.split())
+            is_reel = payload.get("deliverable_type") == "reel"
+            scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
+            skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
+            if is_reel and not skill_id:
+                raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
+            project_response = _studio_request("POST", "/projects/", json={
+                "name": payload["title"], "topic": payload["title"], "script": script,
+                "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
+                "num_scenes": scenes, "skill_id": skill_id or None,
+            }).json()
+            project_id = project_response.get("id")
+            if not project_id:
+                raise RuntimeError("AI Video Studio did not return project id")
+            _studio_request("POST", "/generation/start", json={
+                "project_id": project_id,
+                "render_opts": {"subtitles": False, "music": False, "interpolation": True,
+                                "upscaling": False, "consistency": "schnell"},
+            })
+            deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
+            while time.time() < deadline:
+                project = _studio_request("GET", f"/projects/{quote(project_id, safe='')}").json()
+                status = str(project.get("status", "")).lower()
+                if status == "done":
+                    break
+                if status == "error":
+                    raise RuntimeError("AI Video Studio project failed: " + str(project.get("error") or "unknown error")[:400])
+                time.sleep(15)
+            else:
+                raise RuntimeError("AI Video Studio render exceeded configured timeout")
+    
+        with tempfile.TemporaryDirectory(prefix="autopolis-video-") as temp:
+            source = os.path.join(temp, "studio-output.mp4")
+            voice_audio = os.path.join(temp, "voicestudio-narration.wav")
+            final = os.path.join(temp, "autopolis-final.mp4")
+            if render_source == "hf_zerogpu":
+                source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+            else:
+                _download_studio_video(project_id, source)
+            source_qc = _probe(source)
+            voice_provider = "VoiceStudio"
             try:
-                _generate_kokoro_hf_audio(script, voice_audio)
-                voice_provider = "Kokoro-HF-fallback"
-            except Exception as fallback_error:
-                raise RuntimeError(
-                    "VoiceStudio TTS failed and Kokoro fallback failed: "
-                    + str(voice_error)[:250] + " | " + str(fallback_error)[:250]
-                ) from fallback_error
-        voice_duration = _probe_audio_duration(voice_audio)
-        subtitle_path = None
-        caption_error = None
-        try:
-            subtitle_path = _transcribe_voice_studio_audio(voice_audio, os.path.join(temp, "captions.srt"))
-        except Exception as caption_exc:
-            caption_error = str(caption_exc)[:300]
-        _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
-        qc = _probe(final)
-        qc["size_bytes"] = os.path.getsize(final)
-        qc["captions_burned"] = bool(subtitle_path)
-        if caption_error:
-            qc["caption_error"] = caption_error
-        qc["voice_provider"] = voice_provider
-        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "phone-selected" if voice_provider == "VoiceStudio" and os.getenv("VOICE_STUDIO_TTS_MODE", "").lower() == "phone" else ("kokoro:" + os.getenv("KOKORO_HF_VOICE", "af_heart") if voice_provider.startswith("Kokoro") else "unconfigured"))
-        qc["voice_duration_seconds"] = round(voice_duration, 2)
-        if qc["size_bytes"] > MAX_VIDEO_BYTES:
-            raise RuntimeError("QC failed: final video exceeds 100 MB")
-        media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
+                _generate_voice_studio_audio(script, voice_audio)
+            except Exception as voice_error:
+                # Preserve VoiceStudio as primary, but let a public Kokoro Space rescue narration.
+                try:
+                    _generate_kokoro_hf_audio(script, voice_audio)
+                    voice_provider = "Kokoro-HF-fallback"
+                except Exception as fallback_error:
+                    raise RuntimeError(
+                        "VoiceStudio TTS failed and Kokoro fallback failed: "
+                        + str(voice_error)[:250] + " | " + str(fallback_error)[:250]
+                    ) from fallback_error
+            voice_duration = _probe_audio_duration(voice_audio)
+            subtitle_path = None
+            caption_error = None
+            try:
+                subtitle_path = _transcribe_voice_studio_audio(voice_audio, os.path.join(temp, "captions.srt"))
+            except Exception as caption_exc:
+                caption_error = str(caption_exc)[:300]
+            _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
+            qc = _probe(final)
+            qc["size_bytes"] = os.path.getsize(final)
+            qc["captions_burned"] = bool(subtitle_path)
+            if caption_error:
+                qc["caption_error"] = caption_error
+            qc["voice_provider"] = voice_provider
+            qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "phone-selected" if voice_provider == "VoiceStudio" and os.getenv("VOICE_STUDIO_TTS_MODE", "").lower() == "phone" else ("kokoro:" + os.getenv("KOKORO_HF_VOICE", "af_heart") if voice_provider.startswith("Kokoro") else "unconfigured"))
+            qc["voice_duration_seconds"] = round(voice_duration, 2)
+            if qc["size_bytes"] > MAX_VIDEO_BYTES:
+                raise RuntimeError("QC failed: final video exceeds 100 MB")
+            media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
 
     callback_url = check_callback_url(str(payload["callback_url"]))
     callback_token = os.getenv("VIDEO_RENDERER_CALLBACK_TOKEN", "")
