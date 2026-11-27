@@ -195,7 +195,7 @@ def _generate_kokoro_hf_audio(script: str, target: str):
     space = os.getenv("KOKORO_HF_SPACE", "Nymbo/Kokoro-TTS").strip()
     voice = os.getenv("KOKORO_HF_VOICE", "af_heart").strip()
     speed = float(os.getenv("KOKORO_HF_SPEED", "1.0"))
-    client = Client(space, token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
+    client = Client(space, hf_token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
     result = _gradio_predict_with_timeout(client, script, speed, voice, api_name="/generate_speech", timeout=int(os.getenv("KOKORO_HF_TIMEOUT_SECONDS", "300")) )
 
     # Gradio Audio may return a path/URL, a path dictionary, or (sample_rate, waveform).
@@ -492,7 +492,7 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
     """Generate short visual clips through a public Hugging Face ZeroGPU Gradio Space."""
     space = os.getenv("HF_ZEROGPU_SPACE", "alexcheng0072/wan27-free-video-generator").strip()
     token = os.getenv("HF_TOKEN", "").strip() or None
-    client = Client(space, token=token, verbose=False)
+    client = Client(space, hf_token=token, verbose=False)
     prompts = _scene_prompts(script, limit=int(os.getenv("HF_ZEROGPU_SCENE_WORDS", "42")))
     if not prompts:
         raise RuntimeError("No script scenes available for ZeroGPU video generation")
