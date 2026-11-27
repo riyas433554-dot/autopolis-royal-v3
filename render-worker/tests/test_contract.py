@@ -96,3 +96,34 @@ def test_compression_uses_longer_of_video_and_voice_tracks(monkeypatch, tmp_path
     args = calls[0]
     assert "-map" in args and "0:v:0" in args and "1:a:0" in args
     assert "tpad=stop_mode=clone:stop_duration=2.000" in args
+
+
+
+def test_completed_render_retries_callback_without_rerender(monkeypatch, tmp_path):
+    import json
+    import sqlite3
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "worker.sqlite"))
+    monkeypatch.setenv("VIDEO_RENDERER_CALLBACK_TOKEN", "callback-secret")
+    main.init_db()
+    payload = {
+        "task_id": 21,
+        "callback_url": "https://autopolis.example/api/video-render-callback",
+    }
+    result = {"video_url": "https://storage.example/video.mp4", "qc_report": {"size_bytes": 1234}}
+    with sqlite3.connect(main.DB_PATH) as db:
+        db.execute(
+            "insert into jobs(job_id,idempotency_key,task_id,payload,status,result,created_at,updated_at) values(?,?,?,?,?,?,?,?)",
+            ("render-21", "autopolis-task-21", 21, json.dumps(payload), "done", json.dumps(result), 1, 1),
+        )
+    calls = []
+    class FakeResponse:
+        ok = True
+        content = b'{"status":"published"}'
+        def json(self):
+            return {"status": "published"}
+    monkeypatch.setattr(main.requests, "post", lambda url, **kwargs: (calls.append((url, kwargs)) or FakeResponse()))
+    response = main.retry_callback_for_job("render-21")
+    assert response["status"] == "published"
+    assert calls[0][0] == payload["callback_url"]
+    assert calls[0][1]["headers"]["authorization"] == "Bearer callback-secret"
+    assert calls[0][1]["json"]["qc_passed"] is True
