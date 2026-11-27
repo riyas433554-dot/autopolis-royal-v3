@@ -179,7 +179,7 @@ def _seconds_to_srt(value: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def _phone_text_to_srt(text: str, start: float, duration: float) -> str:
+def _phone_text_to_srt(text: str, start: float, duration: float, start_index: int = 1) -> str:
     import re
     sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
     if not sentences:
@@ -189,10 +189,10 @@ def _phone_text_to_srt(text: str, start: float, duration: float) -> str:
     total_words = max(1, sum(len(sentence.split()) for sentence in sentences))
     cursor = start
     entries = []
-    index = 1
+    index = start_index
     for sentence in sentences:
         share = duration * len(sentence.split()) / total_words
-        end = min(start + duration, cursor + max(0.8, share))
+        end = min(start + duration, cursor + share)
         entries.append(f"{index}\n{_seconds_to_srt(cursor)} --> {_seconds_to_srt(end)}\n{sentence}\n")
         index += 1
         cursor = end
@@ -206,6 +206,7 @@ def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) 
     chunk_seconds = 25
     with tempfile.TemporaryDirectory(prefix="voicestudio-phone-asr-") as temp:
         all_srt = []
+        next_caption_index = 1
         for index, offset in enumerate(range(0, int(duration) + 1, chunk_seconds)):
             chunk_path = os.path.join(temp, f"asr-{index:03d}.wav")
             subprocess.run([
@@ -233,7 +234,9 @@ def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) 
             text = str(text).strip()
             if text:
                 chunk_duration = min(chunk_seconds, max(0.1, duration - offset))
-                all_srt.append(_phone_text_to_srt(text, float(offset), chunk_duration))
+                caption_block = _phone_text_to_srt(text, float(offset), chunk_duration, next_caption_index)
+                all_srt.append(caption_block)
+                next_caption_index += len(caption_block.split("\\n\\n"))
     captions = "\n".join(part for part in all_srt if part).strip()
     if not captions:
         return None
