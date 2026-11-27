@@ -174,6 +174,72 @@ def _generate_voice_studio_audio(script: str, target: str):
         raise RuntimeError("VoiceStudio returned an empty narration WAV")
 
 
+
+def _generate_kokoro_hf_audio(script: str, target: str):
+    """Fallback narration via a public Kokoro Space; scripts are sent to that third party."""
+    space = os.getenv("KOKORO_HF_SPACE", "Nymbo/Kokoro-TTS").strip()
+    voice = os.getenv("KOKORO_HF_VOICE", "af_heart").strip()
+    speed = float(os.getenv("KOKORO_HF_SPEED", "1.0"))
+    client = Client(space, token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
+    result = client.predict(script, speed, voice, api_name="/generate_speech")
+
+    # Gradio Audio may return a path/URL, a path dictionary, or (sample_rate, waveform).
+    source_path = None
+    if isinstance(result, dict):
+        source_path = result.get("path") or result.get("url")
+    elif isinstance(result, (tuple, list)) and len(result) == 2:
+        first, second = result
+        if isinstance(first, (str, os.PathLike)):
+            source_path = first
+        elif isinstance(first, (int, float)):
+            import numpy as np
+            import wave
+            sample_rate = int(first)
+            waveform = np.asarray(second).squeeze()
+            if waveform.size == 0:
+                raise RuntimeError("Kokoro returned an empty waveform")
+            if waveform.dtype.kind == "f":
+                peak = float(np.max(np.abs(waveform)))
+                if peak > 1.0:
+                    waveform = waveform / peak
+                waveform = np.clip(waveform, -1.0, 1.0)
+                waveform = (waveform * 32767.0).astype(np.int16)
+            else:
+                waveform = waveform.astype(np.int16)
+            raw_path = target + ".kokoro-raw.wav"
+            with wave.open(raw_path, "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(sample_rate)
+                output.writeframes(waveform.tobytes())
+            source_path = raw_path
+    elif isinstance(result, (str, os.PathLike)):
+        source_path = result
+
+    if not source_path:
+        raise RuntimeError("Kokoro Space returned no audio file")
+    source_path = str(source_path)
+    raw_path = target + ".kokoro-source"
+    if source_path.startswith(("https://", "http://")):
+        response = requests.get(source_path, timeout=(20, 600))
+        response.raise_for_status()
+        with open(raw_path, "wb") as output:
+            output.write(response.content)
+    elif os.path.isfile(source_path):
+        shutil.copyfile(source_path, raw_path)
+    else:
+        raise RuntimeError("Kokoro Space audio path is unavailable")
+    if not os.path.getsize(raw_path):
+        raise RuntimeError("Kokoro Space returned an empty audio file")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", raw_path,
+        "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", target,
+    ], capture_output=True, text=True, timeout=900, check=True)
+    if not os.path.isfile(target) or not os.path.getsize(target):
+        raise RuntimeError("Kokoro fallback produced an empty narration WAV")
+
+
+
 def _seconds_to_srt(value: float) -> str:
     milliseconds = max(0, int(round(value * 1000)))
     hours, remainder = divmod(milliseconds, 3600000)
@@ -523,7 +589,19 @@ def render_and_callback(job_id: str):
         else:
             _download_studio_video(project_id, source)
         source_qc = _probe(source)
-        _generate_voice_studio_audio(script, voice_audio)
+        voice_provider = "VoiceStudio"
+        try:
+            _generate_voice_studio_audio(script, voice_audio)
+        except Exception as voice_error:
+            # Preserve VoiceStudio as primary, but let a public Kokoro Space rescue narration.
+            try:
+                _generate_kokoro_hf_audio(script, voice_audio)
+                voice_provider = "Kokoro-HF-fallback"
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    "VoiceStudio TTS failed and Kokoro fallback failed: "
+                    + str(voice_error)[:250] + " | " + str(fallback_error)[:250]
+                ) from fallback_error
         voice_duration = _probe_audio_duration(voice_audio)
         subtitle_path = None
         caption_error = None
@@ -537,8 +615,8 @@ def render_and_callback(job_id: str):
         qc["captions_burned"] = bool(subtitle_path)
         if caption_error:
             qc["caption_error"] = caption_error
-        qc["voice_provider"] = "VoiceStudio"
-        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "unconfigured")
+        qc["voice_provider"] = voice_provider
+        qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "phone-selected" if voice_provider == "VoiceStudio" and os.getenv("VOICE_STUDIO_TTS_MODE", "").lower() == "phone" else ("kokoro:" + os.getenv("KOKORO_HF_VOICE", "af_heart") if voice_provider.startswith("Kokoro") else "unconfigured"))
         qc["voice_duration_seconds"] = round(voice_duration, 2)
         if qc["size_bytes"] > MAX_VIDEO_BYTES:
             raise RuntimeError("QC failed: final video exceeds 100 MB")
