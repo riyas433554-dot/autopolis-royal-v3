@@ -49,3 +49,16 @@ def test_motion_graphics_renderer_builds_five_ffmpeg_clips_and_concat(tmp_path, 
     manifest = (tmp_path / "motion-graphics-clips.txt").read_text()
     assert manifest.count("file ") == 5
     assert "\\n" not in manifest
+
+
+def test_motion_graphics_ffmpeg_commands_are_memory_bounded(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker, "_draw_motion_graphics_card", lambda *args: None)
+    monkeypatch.setattr(worker.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    worker._render_with_motion_graphics("One. Two. Three. Four. Five.", "Launch", "video", str(tmp_path))
+
+    for command in calls[:5]:
+        assert command[command.index("-filter_threads") + 1] == "1"
+        assert command[command.index("-threads:v") + 1] == "1"
+        assert "s=960x540:fps=18" in command[command.index("-vf") + 1]
+    assert calls[-1][calls[-1].index("-filter_threads") + 1] == "1"
