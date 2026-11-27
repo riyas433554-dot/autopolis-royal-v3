@@ -314,14 +314,18 @@ def render_and_callback(job_id: str):
     payload = json.loads(job["payload"])
     script = payload["script"]
     word_count = len(script.split())
-    scenes = max(3, min(12, (word_count + 69) // 70))
+    is_reel = payload.get("deliverable_type") == "reel"
+    scenes = max(3, min(6 if is_reel else 12, (word_count + 69) // 70))
+    skill_id = os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if is_reel else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")
+    if is_reel and not skill_id:
+        raise RuntimeError("Set AI_VIDEO_STUDIO_SOCIAL_SKILL_ID to a verified vertical/reel skill before rendering reel tasks")
     project_response = _studio_request("POST", "/projects/", json={
         "name": payload["title"],
         "topic": payload["title"],
         "script": script,
         "voice": os.getenv("AI_VIDEO_STUDIO_VOICE", "af_sarah"),
         "num_scenes": scenes,
-        "skill_id": (os.getenv("AI_VIDEO_STUDIO_SOCIAL_SKILL_ID") if payload.get("deliverable_type") == "reel" else os.getenv("AI_VIDEO_STUDIO_SKILL_ID")) or None,
+        "skill_id": skill_id or None,
     }).json()
     project_id = project_response.get("id")
     if not project_id:
