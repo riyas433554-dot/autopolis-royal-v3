@@ -94,7 +94,7 @@ export default async function handler(req, res) {
         }
       }
       await reconcileTask(Number(job.task_id));
-      results.push({ job_id: job.id, provider: job.provider, account_id: job.account_id, http_status: response.code, ok: response.code >= 200 && response.code < 300 && response.body?.ok !== false });
+      results.push({ job_id: job.id, provider: job.provider, http_status: response.code, ok: response.code >= 200 && response.code < 300 && response.body?.ok !== false });
     }
     return res.status(200).json({ ok: true, claimed: (jobs || []).length, processed: results.length, results });
   } catch (error) {
