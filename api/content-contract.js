@@ -72,10 +72,14 @@ export function normalizeContentSpec({
   const category = cleanCategory(contentCategory ?? task?.content_category, type);
   const targets = cleanTargets(platformTargets ?? task?.platform_targets, mode);
   const sourceId = positiveInteger(sourceTaskId ?? task?.source_video_task_id);
-  const clipSegments = cleanSegments(segments ?? task?.clip_segments);
+  const rawSegments = segments ?? task?.clip_segments;
+  const clipSegments = cleanSegments(rawSegments);
+  if (Array.isArray(rawSegments) && rawSegments.length > 0 && clipSegments.length === 0) {
+    throw new Error('Repurpose clip segments must contain valid start/end times');
+  }
 
-  if (mode === 'repurpose' && (!sourceId || clipSegments.length === 0 || sourceId === taskId)) {
-    throw new Error('Repurpose mode requires a different source task and at least one valid clip segment');
+  if (mode === 'repurpose' && (!sourceId || sourceId === taskId)) {
+    throw new Error('Repurpose mode requires a different source task; clips may be auto-selected');
   }
   if (mode !== 'repurpose' && sourceId) {
     throw new Error('source_video_task_id is only valid for repurpose mode');
