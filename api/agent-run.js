@@ -344,32 +344,59 @@ export default async function handler(req, res) {
       if (!process.env.VIDEO_RENDERER_URL || !process.env.VIDEO_RENDERER_TOKEN || !publicBase) {
         videoRender = { status: 'not_configured', message: 'External render host requires VIDEO_RENDERER_URL, VIDEO_RENDERER_TOKEN, and AUTOPOLIS_PUBLIC_URL.' };
       } else {
-        let renderRow = null;
-        try {
-          const { data: insertedRender, error: insertRenderError } = await supabase.from('video_render_jobs')
-            .insert({ task_id: taskId, provider: 'external', status: 'submitting' })
-            .select('id').single();
-          if (insertRenderError) throw insertRenderError;
-          renderRow = insertedRender;
-          const callbackUrl = new URL('/api/video-render-callback', publicBase).toString();
-          const dispatched = await dispatchVideoRender({ task, result, callbackUrl });
-          const { error: renderUpdateError } = await supabase.from('video_render_jobs').update({
-            renderer_job_id: dispatched.job_id,
-            provider: dispatched.provider,
-            status: 'submitted',
-            submitted_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', renderRow.id);
-          if (renderUpdateError) throw renderUpdateError;
-          videoRender = { status: 'submitted', job_id: dispatched.job_id, provider: dispatched.provider };
-        } catch (renderError) {
-          const message = String(renderError?.message || renderError).slice(0, 500);
-          if (renderRow) {
-            await supabase.from('video_render_jobs').update({
-              status: 'failed', error: message, updated_at: new Date().toISOString(),
+        const { data: existingRender, error: existingRenderError } = await supabase.from('video_render_jobs')
+          .select('id,status,renderer_job_id').eq('task_id', taskId).maybeSingle();
+        if (existingRenderError) throw existingRenderError;
+        if (existingRender?.status === 'published' || existingRender?.status === 'publishing') {
+          videoRender = { status: existingRender.status, job_id: existingRender.renderer_job_id };
+        } else {
+          let renderRow = null;
+          try {
+            if (existingRender) {
+              const { data: resetRender, error: resetRenderError } = await supabase.from('video_render_jobs').update({
+                provider: 'external',
+                status: 'submitting',
+                renderer_job_id: null,
+                video_url: null,
+                qc_passed: false,
+                qc_report: {},
+                provider_video_id: null,
+                provider_url: null,
+                error: null,
+                submitted_at: null,
+                rendered_at: null,
+                published_at: null,
+                updated_at: new Date().toISOString(),
+              }).eq('id', existingRender.id).select('id').single();
+              if (resetRenderError) throw resetRenderError;
+              renderRow = resetRender;
+            } else {
+              const { data: insertedRender, error: insertRenderError } = await supabase.from('video_render_jobs')
+                .insert({ task_id: taskId, provider: 'external', status: 'submitting' })
+                .select('id').single();
+              if (insertRenderError) throw insertRenderError;
+              renderRow = insertedRender;
+            }
+            const callbackUrl = new URL('/api/video-render-callback', publicBase).toString();
+            const dispatched = await dispatchVideoRender({ task, result, callbackUrl });
+            const { error: renderUpdateError } = await supabase.from('video_render_jobs').update({
+              renderer_job_id: dispatched.job_id,
+              provider: dispatched.provider,
+              status: 'submitted',
+              submitted_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             }).eq('id', renderRow.id);
+            if (renderUpdateError) throw renderUpdateError;
+            videoRender = { status: 'submitted', job_id: dispatched.job_id, provider: dispatched.provider };
+          } catch (renderError) {
+            const message = String(renderError?.message || renderError).slice(0, 500);
+            if (renderRow) {
+              await supabase.from('video_render_jobs').update({
+                status: 'failed', error: message, updated_at: new Date().toISOString(),
+              }).eq('id', renderRow.id);
+            }
+            videoRender = { status: 'failed', error: message };
           }
-          videoRender = { status: 'failed', error: message };
         }
       }
     }

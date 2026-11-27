@@ -1,5 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
+import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from './video-renderer.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -45,9 +46,11 @@ export default async function handler(req, res) {
     if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     const { data: task, error: taskError } = await supabase.from('tasks')
-      .select('id,title,description,status,deliverable_type').eq('id', job.task_id).maybeSingle();
+      .select('id,title,description,status,deliverable_type,result').eq('id', job.task_id).maybeSingle();
     if (taskError) throw taskError;
     if (!task || task.status !== 'done') return res.status(409).json({ error: 'Task must be done before render callback' });
+    const durationError = validateVideoDuration(task.description, req.body?.qc_report);
+    if (durationError) return res.status(422).json({ error: durationError });
 
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
@@ -80,8 +83,8 @@ export default async function handler(req, res) {
       body: {
         task_id: job.task_id,
         account_id: account.account_id,
-        title: task.title,
-        description: task.description || '',
+        title: extractYoutubeTitle(task.result, task.title),
+        description: extractYoutubeDescription(task.result, task.description || ''),
         video_url: videoUrl,
         privacy_status: 'public',
       },
