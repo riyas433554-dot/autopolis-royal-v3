@@ -14,17 +14,19 @@ sys.modules[SPEC.name] = voice_app
 SPEC.loader.exec_module(voice_app)
 
 
-class FakeKittenModel:
-    def generate(self, text, voice):
+class FakePiperVoice:
+    def synthesize_wav(self, text, wav_file):
         assert text == "Hello from Autopolis."
-        assert voice == "expr-voice-2-f"
-        return [0.0, 0.25, -0.25, 0.5]
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        wav_file.writeframes(b"\\x00\\x00\\x10\\x00\\xf0\\xff\\x20\\x00")
 
 
 def test_voice_studio_health_is_public():
     response = TestClient(voice_app.app).get("/health")
     assert response.status_code == 200
-    assert response.json()["engine"] == "Kitten TTS Mini"
+    assert response.json()["engine"] == "Piper ONNX CPU"
 
 
 def test_voice_studio_speech_requires_bearer_token(monkeypatch):
@@ -36,9 +38,9 @@ def test_voice_studio_speech_requires_bearer_token(monkeypatch):
     assert response.status_code == 401
 
 
-def test_voice_studio_returns_valid_wav_using_selected_builtin_voice(monkeypatch):
+def test_voice_studio_returns_valid_wav_using_piper(monkeypatch):
     monkeypatch.setenv("VOICE_STUDIO_API_KEY", "test-secret")
-    monkeypatch.setattr(voice_app, "_get_model", lambda: FakeKittenModel())
+    monkeypatch.setattr(voice_app, "_get_model", lambda: FakePiperVoice())
     response = TestClient(voice_app.app).post(
         "/v1/audio/speech",
         headers={"authorization": "Bearer test-secret"},
@@ -47,7 +49,7 @@ def test_voice_studio_returns_valid_wav_using_selected_builtin_voice(monkeypatch
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("audio/wav")
     with wave.open(io.BytesIO(response.content), "rb") as audio:
-        assert audio.getframerate() == 24000
+        assert audio.getframerate() == 22050
         assert audio.getnchannels() == 1
         assert audio.getnframes() == 4
 
