@@ -52,3 +52,25 @@ Short-form jobs default to `hf_zerogpu`; `VIDEO_RENDER_PROVIDER_SHORT_FORM` can 
 ## Apply / deploy
 
 This PR adds a Supabase migration. Do not run live tasks until the migration is applied. No Render environment changes or production migration were performed by this code change.
+
+
+## Multi-account publishing queue
+
+Each QC-passed render fans out to one durable `social_publish_jobs` row per selected connected account and destination. A single connected Meta login can yield separate Facebook Page and Instagram account entries; YouTube channels are separate Google-connected account rows. The unique key `task_id + provider + account_id` prevents callback retries from creating duplicate account jobs.
+
+The scheduled GitHub Actions workflow runs the dispatcher every 10 minutes. It processes a bounded batch, with a PostgreSQL claim RPC using row locks and transaction-scoped advisory locks so one account cannot be claimed twice concurrently. The queue has:
+- per-account cooldown: default 15 minutes;
+- per-account daily cap: default 6 jobs;
+- shared YouTube API project cap: 6 uploads/day (YouTube quota is project-scoped, not multiplied by Google accounts);
+- exponential retry for transient publisher failures, up to 5 attempts;
+- expired pre-upload leases recover automatically; interrupted uploads are marked for manual provider-side verification rather than blindly reposted.
+
+Configuration overrides on the dispatcher service:
+- `SOCIAL_ACCOUNT_MIN_INTERVAL_SECONDS` (default 900)
+- `SOCIAL_ACCOUNT_DAILY_LIMIT` (default 6)
+
+The GitHub Actions workflow requires repository secret `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`; optional repository variable `AUTOPOLIS_PUBLIC_URL` defaults to the current Autopolis Render URL. The workflow is scheduled only after it exists on the default branch.
+
+## Meta publishing prerequisites
+
+Facebook Page videos and Facebook Reels use separate queue destinations; Instagram Reels publish to each connected Instagram professional account. The OAuth flow now requests `pages_manage_posts`. Existing Meta connections must be reconnected once to grant the new permission, and Meta App Review / live-mode permission approval may still be required. A successful render or queued job is not a confirmed post: only a provider response and stored provider URL mark that account job published.
