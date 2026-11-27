@@ -13,7 +13,7 @@ Use [AI Video Studio](https://github.com/06pratyush/ai-video-pipeline) v2 as the
 ## Run
 
 1. Install and start AI Video Studio on the GPU machine; keep its backend bound to localhost (7860). Install/download model weights according to its upstream docs.
-2. Run this bridge on the same machine/container network and point `AI_VIDEO_STUDIO_URL` to the private backend URL. Do not expose port 7860 publicly; the Studio API itself has no authentication.
+2. Run this bridge on the same GPU host. The simplest Docker option is host networking (`--network host`) so the bridge can reach AI Video Studio's default `127.0.0.1:7860`; set `AI_VIDEO_STUDIO_URL` accordingly. Do not expose port 7860 publicly; the Studio API itself has no authentication. If using a normal bridge network, bind Studio only to a private interface and firewall it from the public internet.
 3. Build this container with a persistent volume mounted at `/data` and expose port 8080 over HTTPS behind a reverse proxy.
 4. Set secrets in the worker host:
    - `VIDEO_RENDERER_TOKEN` — must match Autopolis `VIDEO_RENDERER_TOKEN`
