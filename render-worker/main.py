@@ -160,7 +160,7 @@ def _generate_voice_studio_audio(script: str, target: str):
             concat_path = os.path.join(temp, "audio-list.txt")
             with open(concat_path, "w", encoding="utf-8") as listing:
                 for audio_path in audio_paths:
-                    listing.write("file '" + audio_path.replace("'", "'\\''") + "'\n")
+            listing.write("file " + json.dumps(path) + "\n")
             subprocess.run([
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", concat_path,
