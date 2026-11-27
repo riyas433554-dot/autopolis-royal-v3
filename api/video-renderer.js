@@ -1,4 +1,6 @@
-const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
+import { normalizeContentSpec } from './content-contract.js';
+
+const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie', 'short', 'long_video', 'series_episode', 'cartoon', 'documentary', 'explainer', 'casual_ai', 'clip']);
 
 export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) {
   const taskId = Number(task?.id);
@@ -9,6 +11,15 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
   const script = typeof result === 'string' ? result.trim() : '';
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
+  let parsedResult = null;
+  if (typeof script === 'string' && script.startsWith('{')) {
+    try { parsedResult = JSON.parse(script); } catch { /* plain scripts may begin with braces */ }
+  }
+  const contentSpec = normalizeContentSpec({
+    task,
+    segments: task?.clip_segments || parsedResult?.clip_segments,
+    sourceTaskId: task?.source_video_task_id || parsedResult?.source_task_id,
+  });
   const payload = {
     task_id: taskId,
     title: title.slice(0, 100),
@@ -16,6 +27,11 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
     deliverable_type: type,
     script,
     profile: String(profile || 'cinematic').slice(0, 40),
+    content_mode: contentSpec.content_mode,
+    content_category: contentSpec.content_category,
+    platform_targets: contentSpec.platform_targets,
+    source_task_id: contentSpec.source_task_id,
+    clip_segments: contentSpec.clip_segments,
   };
   if (callbackUrl) {
     const callback = new URL(callbackUrl);
