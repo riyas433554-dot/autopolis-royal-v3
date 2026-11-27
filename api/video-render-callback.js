@@ -1,5 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
+import { renderCallbackPrivacyStatus } from './video-render-policy.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -83,7 +84,7 @@ export default async function handler(req, res) {
         title: task.title,
         description: task.description || '',
         video_url: videoUrl,
-        privacy_status: 'public',
+        privacy_status: renderCallbackPrivacyStatus(),
       },
     }, uploadRes);
 
