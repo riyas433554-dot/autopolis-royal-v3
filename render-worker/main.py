@@ -601,7 +601,7 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     concat_path = os.path.join(temp, "motion-graphics-clips.txt")
     with open(concat_path, "w", encoding="utf-8") as listing:
         for path in clips:
-            listing.write("file " + json.dumps(path) + "\n")
+            listing.write("file " + path + "\n")
     output = os.path.join(temp, "motion-graphics-source.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
