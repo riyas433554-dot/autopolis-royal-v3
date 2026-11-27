@@ -110,7 +110,7 @@ export default async function handler(req, res) {
 
     const autoRepurpose = await ensureAutoRepurpose(task, targets);
     const autoEnabled = needsAutoRepurpose(task, targets);
-    const directTargets = autoEnabled ? targets.filter(target => !['instagram_reels','facebook_reels'].includes(target)) : targets;
+    const directTargets = autoEnabled ? targets.filter(target => !['youtube_shorts','instagram_reels','facebook_reels'].includes(target)) : targets;
     const needsYoutube = directTargets.includes('youtube') || directTargets.includes('youtube_shorts');
     const needsMeta = directTargets.some(target => ['facebook','facebook_reels','instagram_reels'].includes(target));
     const accountRequests = [];
