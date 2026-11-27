@@ -79,3 +79,20 @@ def test_voice_studio_tts_uses_local_openai_compatible_endpoint(monkeypatch, tmp
     assert calls[0][1]["json"]["voice"] == "test-voice"
     assert calls[0][1]["json"]["response_format"] == "wav"
     assert open(target, "rb").read() == b"RIFFfake-wav"
+
+
+
+def test_voice_studio_model_must_be_explicit(monkeypatch, tmp_path):
+    monkeypatch.delenv("VOICE_STUDIO_MODEL", raising=False)
+    with pytest.raises(RuntimeError, match="Set VOICE_STUDIO_MODEL"):
+        main._generate_voice_studio_audio("script", str(tmp_path / "voice.wav"))
+
+
+def test_compression_uses_longer_of_video_and_voice_tracks(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(main.subprocess, "run", lambda args, **kwargs: calls.append(args))
+    monkeypatch.setattr(main.os.path, "getsize", lambda path: 1)
+    main._compress_video("video.mp4", "voice.wav", str(tmp_path / "final.mp4"), 10.0, 12.0)
+    args = calls[0]
+    assert "-map" in args and "0:v:0" in args and "1:a:0" in args
+    assert "tpad=stop_mode=clone:stop_duration=2.000" in args
