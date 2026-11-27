@@ -176,11 +176,15 @@ def _transcribe_voice_studio_audio(audio_path: str, target: str) -> str | None:
     api_key = os.getenv("VOICE_STUDIO_API_KEY", "").strip()
     if api_key:
         headers["authorization"] = "Bearer " + api_key
+    form_data = {"model": os.getenv("VOICE_STUDIO_ASR_MODEL", "whisper-1"), "response_format": "srt"}
+    language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
+    if language:
+        form_data["language"] = language
     with open(audio_path, "rb") as audio:
         response = requests.post(
             base + "/v1/audio/transcriptions",
             headers=headers,
-            data={"model": os.getenv("VOICE_STUDIO_ASR_MODEL", "whisper-1"), "response_format": "srt"},
+            data=form_data,
             files={"file": ("narration.wav", audio, "audio/wav")},
             timeout=(20, 1800),
         )
