@@ -3,6 +3,8 @@ import base64
 import hmac
 import json
 import os
+import re
+import math
 import shutil
 import sqlite3
 import subprocess
@@ -12,6 +14,8 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+
+from PIL import Image, ImageDraw, ImageFont
 from urllib.parse import quote
 
 import requests
@@ -467,6 +471,144 @@ def _upload_to_autopolis_storage(path: str, task_id: int, job_id: str) -> str:
     if not video_url or not str(video_url).startswith("https://"):
         raise RuntimeError("Autopolis returned an invalid signed download URL")
     return video_url
+
+
+MOTION_GRAPHICS_HEADINGS = [
+    "ROYAL V3 IS LIVE",
+    "TASKS ENTER THE QUEUE",
+    "AGENTS CLAIM WITH A LEASE",
+    "PROGRESS. STATUS. RESULTS.",
+    "QC PASSED. READY TO PUBLISH",
+]
+
+
+def build_motion_graphics_scenes(script: str, title: str) -> list[dict[str, str]]:
+    """Create five short, narration-aligned text cards for the no-GPU fallback."""
+    cleaned = re.sub(r"\\s+", " ", str(script or "")).strip()
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\\s+", cleaned) if part.strip()]
+    if not sentences:
+        sentences = [cleaned or str(title or "Autopolis Royal V3")]
+    if len(sentences) < 5:
+        words = " ".join(sentences).split()
+        size = max(1, math.ceil(len(words) / 5))
+        sentences = [" ".join(words[i:i + size]) for i in range(0, len(words), size)]
+    groups = [[] for _ in range(5)]
+    for index, sentence in enumerate(sentences):
+        groups[min(4, index * 5 // len(sentences))].append(sentence)
+    scenes = []
+    for index, group in enumerate(groups):
+        body = " ".join(group).strip()
+        if len(body) > 180:
+            body = body[:177].rsplit(" ", 1)[0] + "…"
+        scenes.append({"heading": MOTION_GRAPHICS_HEADINGS[index], "body": body or str(title or "Autopolis Royal V3")})
+    return scenes
+
+
+def _motion_font(size: int, bold: bool = False):
+    candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            try:
+                return ImageFont.truetype(candidate, size)
+            except OSError:
+                pass
+    return ImageFont.load_default()
+
+
+def _wrap_motion_text(draw, text: str, font, max_width: int) -> list[str]:
+    words = str(text or "").split()
+    lines, current = [], ""
+    for word in words:
+        candidate = (current + " " + word).strip()
+        if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines[:5]
+
+
+def _draw_motion_graphics_card(path: str, title: str, scene: dict[str, str], index: int):
+    width, height = 1280, 720
+    image = Image.new("RGB", (width, height), (9, 17, 32))
+    draw = ImageDraw.Draw(image)
+    for y in range(height):
+        blend = y / max(1, height - 1)
+        color = (int(9 + 12 * blend), int(17 + 18 * blend), int(32 + 24 * blend))
+        draw.line((0, y, width, y), fill=color)
+    # Low-contrast skyline and architectural blocks, kept behind readable copy.
+    skyline = [(0, 610, 95), (80, 570, 125), (180, 625, 90), (260, 535, 150),
+               (375, 600, 110), (475, 515, 175), (610, 590, 120), (725, 550, 155),
+               (850, 620, 105), (950, 500, 190), (1080, 575, 135), (1190, 540, 160)]
+    for x, top, bw in skyline:
+        draw.rectangle((x, top, x + bw, height), fill=(15, 31, 52))
+        for wx in range(x + 16, x + bw - 8, 24):
+            for wy in range(top + 22, height - 24, 28):
+                draw.rectangle((wx, wy, wx + 7, wy + 9), fill=(29, 57, 83))
+    draw.rounded_rectangle((72, 64, 1208, 656), radius=28, outline=(38, 75, 105), width=2, fill=(10, 22, 39))
+    draw.text((112, 104), "AUTOPOLIS  /  ROYAL V3", font=_motion_font(24, True), fill=(124, 210, 240))
+    draw.text((112, 154), f"{index + 1:02d}  /  05", font=_motion_font(20), fill=(120, 148, 176))
+    heading_font = _motion_font(46, True)
+    heading_lines = _wrap_motion_text(draw, scene["heading"], heading_font, 1000)
+    y = 235
+    for line in heading_lines:
+        draw.text((112, y), line, font=heading_font, fill=(244, 249, 255))
+        y += 58
+    body_font = _motion_font(30)
+    body_lines = _wrap_motion_text(draw, scene["body"], body_font, 980)
+    y += 22
+    for line in body_lines:
+        draw.text((116, y), line, font=body_font, fill=(190, 210, 229))
+        y += 44
+    draw.rounded_rectangle((112, 590, 112 + int(1000 * (index + 1) / 5), 600), radius=5, fill=(58, 190, 220))
+    image.save(path, format="PNG", optimize=True)
+
+
+def _render_with_motion_graphics(script: str, title: str, deliverable_type: str, temp: str) -> str:
+    """Render original animated launch cards locally with FFmpeg; no external GPU Space."""
+    scenes = build_motion_graphics_scenes(script, title)
+    word_count = len(str(script or "").split())
+    total_seconds = max(45.0, min(60.0, word_count / 2.5))
+    scene_seconds = total_seconds / len(scenes)
+    fps = 24
+    clips = []
+    for index, scene in enumerate(scenes):
+        image_path = os.path.join(temp, f"motion-card-{index:02d}.png")
+        clip_path = os.path.join(temp, f"motion-card-{index:02d}.mp4")
+        _draw_motion_graphics_card(image_path, title, scene, index)
+        frames = max(1, int(round(scene_seconds * fps)))
+        fade_out_start = max(0.5, scene_seconds - 0.55)
+        video_filter = (
+            f"zoompan=z='min(zoom+0.00035,1.06)':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s=1280x720:fps={fps},"
+            f"fade=t=in:st=0:d=0.45,"
+            f"fade=t=out:st={fade_out_start:.3f}:d=0.45"
+        )
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-loop", "1", "-framerate", str(fps), "-i", image_path,
+            "-vf", video_filter, "-t", f"{scene_seconds:.3f}", "-an",
+            "-c:v", "libx264", "-preset", "ultrafast", "-b:v", "1200k",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", clip_path,
+        ], capture_output=True, text=True, timeout=1800, check=True)
+        clips.append(clip_path)
+    concat_path = os.path.join(temp, "motion-graphics-clips.txt")
+    with open(concat_path, "w", encoding="utf-8") as listing:
+        for path in clips:
+            listing.write("file " + json.dumps(path) + "\\n")
+    output = os.path.join(temp, "motion-graphics-source.mp4")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
+        "-c", "copy", output,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+    return output
 
 
 def _scene_prompts(script: str, limit: int = 42) -> list[str]:
