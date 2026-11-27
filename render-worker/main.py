@@ -195,7 +195,7 @@ def _generate_kokoro_hf_audio(script: str, target: str):
     space = os.getenv("KOKORO_HF_SPACE", "Nymbo/Kokoro-TTS").strip()
     voice = os.getenv("KOKORO_HF_VOICE", "af_heart").strip()
     speed = float(os.getenv("KOKORO_HF_SPEED", "1.0"))
-    client = Client(space, token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
+    client = Client(space, hf_token=os.getenv("HF_TOKEN", "").strip() or None, verbose=False)
     result = _gradio_predict_with_timeout(client, script, speed, voice, api_name="/generate_speech", timeout=int(os.getenv("KOKORO_HF_TIMEOUT_SECONDS", "300")) )
 
     # Gradio Audio may return a path/URL, a path dictionary, or (sample_rate, waveform).
