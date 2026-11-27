@@ -5,23 +5,23 @@ const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
 export function extractVideoNarration(result) {
   const text = typeof result === 'string' ? result.trim() : '';
   if (!text) return '';
-  const heading = /^#{1,6}\\s*(?:voiceover|voice-over|narration)\\s+script\\b[^\\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:voiceover|voice-over|narration)\s+script\b[^\n]*$/im.exec(text);
   if (!heading) return text;
 
   const start = heading.index + heading[0].length;
   const remainder = text.slice(start);
-  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   const section = nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
   const spokenLines = [];
 
-  for (const line of section.split(/\\r?\\n/)) {
+  for (const line of section.split(/\r?\n/)) {
     if (!line.trim().startsWith('|')) continue;
     const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-    if (cells.length < 2 || !/^\\d{1,2}:\\d{2}/.test(cells[0])) continue;
+    if (cells.length < 2 || !/^\d{1,2}:\d{2}/.test(cells[0])) continue;
     const spoken = cells[1]
-      .replace(/\\*\\*/g, '')
-      .replace(/\\`/g, '')
-      .replace(/^\\s*(?:hook|opening|closing|voiceover|vo)\\s*:\\s*/i, '')
+      .replace(/\*\*/g, '')
+      .replace(/`/g, '')
+      .replace(/^\s*(?:hook|opening|closing|voiceover|vo)\s*:\s*/i, '')
       .trim();
     if (spoken) spokenLines.push(spoken);
   }
@@ -29,23 +29,23 @@ export function extractVideoNarration(result) {
   if (!spokenLines.length) {
     throw new Error('Could not extract spoken lines from the markdown voiceover script');
   }
-  return spokenLines.join('\\n');
+  return spokenLines.join('\n');
 }
 
 export function extractYoutubeDescription(result, fallback = '') {
   const text = typeof result === 'string' ? result : '';
-  const heading = /^#{1,6}\\s*(?:youtube\\s+)?description\\b[^\\n]*$/im.exec(text);
+  const heading = /^#{1,6}\s*(?:youtube\s+)?description\b[^\n]*$/im.exec(text);
   if (!heading) return String(fallback || '').trim().slice(0, 5000);
   const remainder = text.slice(heading.index + heading[0].length);
-  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  const nextHeading = /^#{1,6}\s+[^\n]+$/m.exec(remainder);
   let section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder).trim();
-  section = section.replace(/^\\`\\`\\`[^\\n]*\\n/, '').replace(/\\n\\`\\`\\`\\s*$/, '').trim();
+  section = section.replace(/^```[^\n]*\n/, '').replace(/\n```\s*$/, '').trim();
   return (section || String(fallback || '').trim()).slice(0, 5000);
 }
 
 export function validateVideoDuration(taskDescription, qcReport) {
   const description = String(taskDescription || '');
-  if (!/45\\s*(?:–|-|to)\\s*60\\s*(?:seconds?|secs?|s)?/i.test(description)) return null;
+  if (!/45\s*(?:–|-|to)\s*60\s*(?:seconds?|secs?|s)?/i.test(description)) return null;
   const duration = Number(qcReport?.duration_seconds);
   if (!Number.isFinite(duration)) return 'QC failed: duration_seconds is required for a 45–60 second video';
   if (duration < 45 || duration > 60) {
