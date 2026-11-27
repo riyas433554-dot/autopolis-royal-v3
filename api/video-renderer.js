@@ -1,4 +1,58 @@
+import { createHash } from 'node:crypto';
+
 const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
+
+export function extractVideoNarration(result) {
+  const text = typeof result === 'string' ? result.trim() : '';
+  if (!text) return '';
+  const heading = /^#{1,6}\\s*(?:voiceover|voice-over|narration)\\s+script\\b[^\\n]*$/im.exec(text);
+  if (!heading) return text;
+
+  const start = heading.index + heading[0].length;
+  const remainder = text.slice(start);
+  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  const section = nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
+  const spokenLines = [];
+
+  for (const line of section.split(/\\r?\\n/)) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+    if (cells.length < 2 || !/^\\d{1,2}:\\d{2}/.test(cells[0])) continue;
+    const spoken = cells[1]
+      .replace(/\\*\\*/g, '')
+      .replace(/\\`/g, '')
+      .replace(/^\\s*(?:hook|opening|closing|voiceover|vo)\\s*:\\s*/i, '')
+      .trim();
+    if (spoken) spokenLines.push(spoken);
+  }
+
+  if (!spokenLines.length) {
+    throw new Error('Could not extract spoken lines from the markdown voiceover script');
+  }
+  return spokenLines.join('\\n');
+}
+
+export function extractYoutubeDescription(result, fallback = '') {
+  const text = typeof result === 'string' ? result : '';
+  const heading = /^#{1,6}\\s*(?:youtube\\s+)?description\\b[^\\n]*$/im.exec(text);
+  if (!heading) return String(fallback || '').trim().slice(0, 5000);
+  const remainder = text.slice(heading.index + heading[0].length);
+  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  let section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder).trim();
+  section = section.replace(/^\\`\\`\\`[^\\n]*\\n/, '').replace(/\\n\\`\\`\\`\\s*$/, '').trim();
+  return (section || String(fallback || '').trim()).slice(0, 5000);
+}
+
+export function validateVideoDuration(taskDescription, qcReport) {
+  const description = String(taskDescription || '');
+  if (!/45\\s*(?:–|-|to)\\s*60\\s*(?:seconds?|secs?|s)?/i.test(description)) return null;
+  const duration = Number(qcReport?.duration_seconds);
+  if (!Number.isFinite(duration)) return 'QC failed: duration_seconds is required for a 45–60 second video';
+  if (duration < 45 || duration > 60) {
+    return 'QC failed: video duration must be 45–60 seconds; got ' + duration.toFixed(2) + ' seconds';
+  }
+  return null;
+}
 
 export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) {
   const taskId = Number(task?.id);
@@ -6,13 +60,13 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
   const type = String(task?.deliverable_type || '').trim().toLowerCase();
   if (!VIDEO_TYPES.has(type)) throw new Error('Task must be a video deliverable');
   const title = String(task?.title || '').trim();
-  const script = typeof result === 'string' ? result.trim() : '';
+  const script = extractVideoNarration(result);
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
   const payload = {
     task_id: taskId,
     title: title.slice(0, 100),
-    description: String(task?.description || '').slice(0, 5000),
+    description: extractYoutubeDescription(result, task?.description),
     deliverable_type: type,
     script,
     profile: String(profile || 'cinematic').slice(0, 40),
@@ -54,7 +108,7 @@ export async function dispatchVideoRender({
     headers: {
       authorization: 'Bearer ' + token,
       'content-type': 'application/json',
-      'idempotency-key': 'autopolis-task-' + payload.task_id,
+      'idempotency-key': 'autopolis-task-' + payload.task_id + '-' + createHash('sha256').update(payload.script).digest('hex').slice(0, 16),
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000),
