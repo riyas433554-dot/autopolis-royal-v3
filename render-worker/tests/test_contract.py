@@ -200,3 +200,19 @@ def test_voice_studio_phone_caption_srt_has_sequential_indices_and_timing():
     assert "\n\n5\n" in srt
     assert "00:00:25,000 -->" in srt
     assert "00:00:30,000" in srt
+
+
+def test_voice_studio_phone_tts_uses_selected_phone_model_when_model_id_omitted(monkeypatch, tmp_path):
+    calls = []
+    class FakeResponse:
+        ok = True
+        content = b"RIFFphone-wav"
+        headers = {"content-type": "audio/wav"}
+    monkeypatch.setattr(main.requests, "post", lambda url, **kwargs: (calls.append(kwargs) or FakeResponse()))
+    monkeypatch.setenv("VOICE_STUDIO_URL", "https://phone-api.example")
+    monkeypatch.setenv("VOICE_STUDIO_ASR_MODE", "phone")
+    monkeypatch.delenv("VOICE_STUDIO_MODEL", raising=False)
+    target = str(tmp_path / "phone.wav")
+    main._generate_voice_studio_audio("Phone narration.", target)
+    assert "model" not in calls[0]["json"]
+    assert calls[0]["json"]["input"] == "Phone narration."
