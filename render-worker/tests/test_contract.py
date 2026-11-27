@@ -216,3 +216,30 @@ def test_voice_studio_phone_tts_uses_selected_phone_model_when_model_id_omitted(
     main._generate_voice_studio_audio("Phone narration.", target)
     assert "model" not in calls[0]["json"]
     assert calls[0]["json"]["input"] == "Phone narration."
+
+
+
+def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path):
+    remote_audio = tmp_path / "space-output.wav"
+    remote_audio.write_bytes(b"source-audio")
+    calls = []
+    class FakeClient:
+        def __init__(self, space, token=None, verbose=False):
+            calls.append(("client", space, token))
+        def predict(self, text, speed, voice, api_name):
+            calls.append(("predict", text, speed, voice, api_name))
+            return str(remote_audio)
+    def fake_run(args, **kwargs):
+        calls.append(("ffmpeg", args))
+        with open(args[-1], "wb") as output:
+            output.write(b"normalized-wav")
+        return type("Completed", (), {"stdout": "", "stderr": ""})()
+    monkeypatch.setattr(main, "Client", FakeClient)
+    monkeypatch.setattr(main.subprocess, "run", fake_run)
+    monkeypatch.setenv("KOKORO_HF_SPACE", "test/Kokoro")
+    monkeypatch.setenv("KOKORO_HF_VOICE", "af_heart")
+    target = str(tmp_path / "narration.wav")
+    main._generate_kokoro_hf_audio("Hello fallback", target)
+    assert calls[0] == ("client", "test/Kokoro", None)
+    assert calls[1] == ("predict", "Hello fallback", 1.0, "af_heart", "/generate_speech")
+    assert open(target, "rb").read() == b"normalized-wav"
