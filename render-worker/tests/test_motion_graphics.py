@@ -44,7 +44,7 @@ def test_motion_graphics_renderer_builds_five_ffmpeg_clips_and_concat(tmp_path, 
 
     assert output.endswith("motion-graphics-source.mp4")
     assert len(calls) == 6
-    assert all(command[0] == "ffmpeg" for command in calls)
+    assert all(command[0] == "ffmpeg" for command in calls)\n    assert "anullsrc=channel_layout=stereo:sample_rate=44100" in calls[-1]
     manifest = (tmp_path / "motion-graphics-clips.txt").read_text()
     assert manifest.count("file ") == 5
     assert "\\n" not in manifest
