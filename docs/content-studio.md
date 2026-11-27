@@ -26,7 +26,7 @@ The renderer only dispatches supported video deliverable types. Categories remai
 
 ## Repurpose worker
 
-The renderer requests a source signed URL from Autopolis. The source endpoint only returns media when its render is QC-passed and `ready` or `published`.
+The renderer requests a source signed URL from Autopolis. The source endpoint only returns media when its render is QC-passed and `ready`, `publishing`, or `published`.
 
 For automatic selection, the worker:
 1. Extracts source audio.
@@ -44,9 +44,9 @@ Short-form jobs default to `hf_zerogpu`; `VIDEO_RENDER_PROVIDER_SHORT_FORM` can 
 
 ## Publishing state
 
-- The existing YouTube publisher remains the active publisher.
-- The callback now skips YouTube when no YouTube destination was selected and leaves the QC-passed video in `ready`.
-- Meta destinations are saved on tasks, but Instagram/Facebook auto-publishing is not yet implemented in this increment. Do not treat a `ready` render as published to Meta.
+- The callback creates one idempotent publish job for every selected destination and connected account.
+- YouTube, Facebook Page video, Facebook Reels, and Instagram Reels have separate publisher paths; each account job records its own provider URL/status.
+- QC-passed media with jobs in progress stays `publishing`; it is marked `published` only when every direct account job succeeds. A failed account can be retried without blocking other accounts.
 - YouTube's current uploader and the media store retain their existing 100 MB limits.
 
 ## Apply / deploy
@@ -69,7 +69,7 @@ Configuration overrides on the dispatcher service:
 - `SOCIAL_ACCOUNT_MIN_INTERVAL_SECONDS` (default 900)
 - `SOCIAL_ACCOUNT_DAILY_LIMIT` (default 6)
 
-The GitHub Actions workflow requires repository secret `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`; optional repository variable `AUTOPOLIS_PUBLIC_URL` defaults to the current Autopolis Render URL. The workflow is scheduled only after it exists on the default branch.
+The GitHub Actions workflow requires repository secret `AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN`; optional repository variable `AUTOPOLIS_PUBLIC_URL` defaults to the current Autopolis Render URL. The workflow is scheduled only after it exists on the default branch. These code paths remain inactive in production until PR merge, migration application, Render deploy, and the GitHub secret are configured.
 
 ## Meta publishing prerequisites
 
