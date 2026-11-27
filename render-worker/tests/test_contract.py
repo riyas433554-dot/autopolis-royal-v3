@@ -279,3 +279,17 @@ def test_repurpose_contract_requires_source_and_valid_segments():
     )
     assert request.source_task_id == 30
     assert request.clip_segments[0].end_seconds == 39
+
+
+def test_best_scene_selector_ranks_hook_cues_and_avoids_overlap():
+    cues = [
+        {"start": 12.0, "end": 16.0, "text": "The hidden secret was finally revealed!"},
+        {"start": 18.0, "end": 22.0, "text": "Wait, this impossible result changes everything?"},
+        {"start": 92.0, "end": 97.0, "text": "The person walks through the room."},
+    ]
+    selected = main._select_best_clip_segments(cues, duration=150.0, max_clips=2, clip_seconds=30.0)
+    assert len(selected) == 2
+    assert selected[0]["start_seconds"] < 12.0
+    assert selected[0]["end_seconds"] > 16.0
+    assert selected[1]["start_seconds"] >= selected[0]["end_seconds"] or selected[0]["start_seconds"] >= selected[1]["end_seconds"]
+    assert "hidden secret" in selected[0]["hook"].lower() or "impossible result" in selected[0]["hook"].lower()
