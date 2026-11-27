@@ -32,6 +32,19 @@ export function extractVideoNarration(result) {
   return spokenLines.join('\n');
 }
 
+export function extractYoutubeTitle(result, fallback = '') {
+  const text = typeof result === 'string' ? result : '';
+  const heading = /^#{1,6}\\s*(?:youtube\\s+)?title\\b[^\\n]*$/im.exec(text);
+  if (!heading) return String(fallback || '').trim().slice(0, 100);
+  const remainder = text.slice(heading.index + heading[0].length);
+  const nextHeading = /^#{1,6}\\s+[^\\n]+$/m.exec(remainder);
+  const section = (nextHeading ? remainder.slice(0, nextHeading.index) : remainder)
+    .split(/\\r?\\n/)
+    .map(line => line.replace(/^\\s*[-*]\\s*/, '').replace(/\\*\\*/g, '').trim())
+    .find(Boolean);
+  return String(section || fallback || '').trim().slice(0, 100);
+}
+
 export function extractYoutubeDescription(result, fallback = '') {
   const text = typeof result === 'string' ? result : '';
   const heading = /^#{1,6}\s*(?:youtube\s+)?description\b[^\n]*$/im.exec(text);
@@ -59,7 +72,7 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
   if (!Number.isInteger(taskId) || taskId <= 0) throw new Error('A valid task id is required');
   const type = String(task?.deliverable_type || '').trim().toLowerCase();
   if (!VIDEO_TYPES.has(type)) throw new Error('Task must be a video deliverable');
-  const title = String(task?.title || '').trim();
+  const title = extractYoutubeTitle(result, task?.title);
   const script = extractVideoNarration(result);
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
