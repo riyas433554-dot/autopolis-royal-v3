@@ -133,8 +133,9 @@ def _generate_voice_studio_audio(script: str, target: str):
     if api_key:
         headers["authorization"] = "Bearer " + api_key
     model = os.getenv("VOICE_STUDIO_MODEL", "").strip()
-    if not model:
-        raise RuntimeError("Set VOICE_STUDIO_MODEL to a VoiceStudio engine whose model/weights license permits your intended use")
+    phone_mode = os.getenv("VOICE_STUDIO_TTS_MODE", os.getenv("VOICE_STUDIO_ASR_MODE", "standard")).strip().lower() == "phone"
+    if not model and not phone_mode:
+        raise RuntimeError("Set VOICE_STUDIO_MODEL for a server API, or use phone mode with a model selected in the VoiceStudio Android app")
     voice = os.getenv("VOICE_STUDIO_VOICE", "default").strip()
     language = os.getenv("VOICE_STUDIO_LANGUAGE", "").strip()
     chunks = _split_tts_text(script, limit=int(os.getenv("VOICE_STUDIO_TTS_CHUNK_CHARS", "1800")))
@@ -143,7 +144,9 @@ def _generate_voice_studio_audio(script: str, target: str):
     with tempfile.TemporaryDirectory(prefix="autopolis-voicestudio-") as temp:
         audio_paths = []
         for index, chunk in enumerate(chunks):
-            body = {"model": model, "input": chunk, "voice": voice, "response_format": "wav"}
+            body = {"input": chunk, "voice": voice, "response_format": "wav"}
+            if model:
+                body["model"] = model
             if language:
                 body["language"] = language
             response = requests.post(base + "/v1/audio/speech", headers=headers, json=body, timeout=(20, 900))
