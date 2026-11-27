@@ -67,15 +67,15 @@ test('extracts only spoken lines from a markdown voiceover table', () => {
     '| 0:05–0:10 | Tasks move to an eligible agent. | Task routing |',
     '## Visual Plan',
     'Do not narrate this section.',
-  ].join('\\n');
-  assert.equal(extractVideoNarration(result), 'Three systems. One workflow.\\nTasks move to an eligible agent.');
+  ].join('\n');
+  assert.equal(extractVideoNarration(result), 'Three systems. One workflow.\nTasks move to an eligible agent.');
 });
 
 test('preserves a plain-text script and extracts a clean YouTube description', () => {
   assert.equal(extractVideoNarration('A plain spoken script.'), 'A plain spoken script.');
-  const result = '## Description\\n\\n```\\nA concise public description.\\n#Autopolis\\n```\\n\\n## Thumbnail\\nNot part of the description.';
-  assert.equal(extractYoutubeDescription(result, 'fallback'), 'A concise public description.\\n#Autopolis');
-  assert.equal(extractYoutubeTitle('## Title\\n\\nRoyal V3 Launch\\n\\n## Description\\ntext', 'fallback'), 'Royal V3 Launch');
+  const result = '## Description\n\n```\nA concise public description.\n#Autopolis\n```\n\n## Thumbnail\nNot part of the description.';
+  assert.equal(extractYoutubeDescription(result, 'fallback'), 'A concise public description.\n#Autopolis');
+  assert.equal(extractYoutubeTitle('## Title\n\nRoyal V3 Launch\n\n## Description\ntext', 'fallback'), 'Royal V3 Launch');
 });
 
 test('duration QC enforces a requested 45–60 second public short', () => {
