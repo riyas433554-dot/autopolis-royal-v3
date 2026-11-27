@@ -1,7 +1,7 @@
 -- Multi-account durable social publishing, per-account pacing, and stale-claim recovery.
 alter table public.social_publish_jobs drop constraint if exists social_publish_jobs_provider_check;
 alter table public.social_publish_jobs add constraint social_publish_jobs_provider_check
-  check (provider in ('youtube','instagram','facebook'));
+  check (provider in ('youtube','instagram','facebook','facebook_reels'));
 alter table public.social_publish_jobs drop constraint if exists social_publish_jobs_status_check;
 alter table public.social_publish_jobs add constraint social_publish_jobs_status_check
   check (status in ('queued','dispatching','uploading','published','error'));
@@ -16,7 +16,7 @@ create index if not exists social_publish_jobs_due_idx
   on public.social_publish_jobs(status, next_attempt_at, created_at);
 
 create table if not exists public.social_publish_account_limits (
-  provider text not null check (provider in ('youtube','instagram','facebook')),
+  provider text not null check (provider in ('youtube','instagram','facebook','facebook_reels')),
   account_id text not null,
   next_allowed_at timestamptz not null default now(),
   daily_date date not null default current_date,
