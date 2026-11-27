@@ -19,7 +19,7 @@ The task creator stores:
 - `source_video_task_id` for repurpose jobs
 
 Default targets:
-- Long form: YouTube + Facebook
+- Long form: YouTube + Facebook full video, plus automatically generated YouTube Shorts + Instagram/Facebook Reels from the best scenes
 - Short form / repurpose: YouTube Shorts + Instagram Reels + Facebook Reels
 
 The renderer only dispatches supported video deliverable types. Categories remain unrestricted except for a 120-character input limit. When a long-form task selects Instagram Reels and/or Facebook Reels, the render callback creates one idempotent automatic Content Studio child task and sends the QC-passed source to the repurpose worker; the full movie is not uploaded as a Reel. Short-form and manual repurpose tasks publish directly to their selected short destinations.
