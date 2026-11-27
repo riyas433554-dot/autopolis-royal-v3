@@ -140,8 +140,8 @@ def test_zero_gpu_provider_calls_public_space_and_makes_portrait_clips(monkeypat
     clip = tmp_path / "remote-clip.mp4"
     clip.write_bytes(b"test-video")
     class FakeClient:
-        def __init__(self, space, token=None, verbose=False):
-            calls.append({"space": space, "token": token})
+        def __init__(self, space, hf_token=None, verbose=False):
+            calls.append({"space": space, "token": hf_token})
         def submit(self, image, prompt, ratio, duration, api_name):
             calls.append({"image": image, "prompt": prompt, "ratio": ratio, "duration": duration, "api_name": api_name})
             return type("FakeJob", (), {"result": lambda self, timeout=None: (str(clip), 123)})()
@@ -224,8 +224,8 @@ def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path
     remote_audio.write_bytes(b"source-audio")
     calls = []
     class FakeClient:
-        def __init__(self, space, token=None, verbose=False):
-            calls.append(("client", space, token))
+        def __init__(self, space, hf_token=None, verbose=False):
+            calls.append(("client", space, hf_token))
         def submit(self, text, speed, voice, api_name):
             calls.append(("predict", text, speed, voice, api_name))
             return type("FakeJob", (), {"result": lambda self, timeout=None: str(remote_audio)})()
