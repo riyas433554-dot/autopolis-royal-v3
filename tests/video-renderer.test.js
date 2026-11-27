@@ -56,3 +56,35 @@ test('fails closed when renderer configuration is absent or response is not acce
     fetchImpl: async () => new Response(JSON.stringify({ error: 'busy' }), { status: 503 }),
   }), /renderer rejected job/);
 });
+
+
+test('includes long-form intent, free-form category, and target destinations in worker payload', () => {
+  const payload = buildVideoRenderPayload({
+    task: {
+      id: 43, title: 'Documentary episode', deliverable_type: 'series_episode',
+      content_mode: 'long_form', content_category: 'nature documentary',
+      platform_targets: ['youtube', 'facebook'],
+    },
+    result: 'Scene-by-scene documentary script',
+    callbackUrl: 'https://autopolis.example/api/video-render-callback',
+  });
+  assert.equal(payload.content_mode, 'long_form');
+  assert.equal(payload.content_category, 'nature documentary');
+  assert.deepEqual(payload.platform_targets, ['youtube', 'facebook']);
+  assert.equal(payload.source_task_id, null);
+});
+
+test('includes source task and selected clip segments for repurpose payload', () => {
+  const payload = buildVideoRenderPayload({
+    task: {
+      id: 44, title: 'Best scene edit', deliverable_type: 'clip',
+      content_mode: 'repurpose', source_video_task_id: 43,
+      platform_targets: ['instagram_reels'],
+    },
+    result: JSON.stringify({ clip_segments: [{ start_seconds: 12, end_seconds: 28, hook: 'reveal' }] }),
+    callbackUrl: 'https://autopolis.example/api/video-render-callback',
+  });
+  assert.equal(payload.source_task_id, 43);
+  assert.equal(payload.content_mode, 'repurpose');
+  assert.deepEqual(payload.clip_segments, [{ start_seconds: 12, end_seconds: 28, hook: 'reveal' }]);
+});
