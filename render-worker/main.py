@@ -606,7 +606,10 @@ def _render_with_motion_graphics(script: str, title: str, deliverable_type: str,
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "concat", "-safe", "0", "-i", concat_path,
-        "-c", "copy", output,
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-t", f"{total_seconds:.3f}",
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", output,
     ], capture_output=True, text=True, timeout=1800, check=True)
     return output
 
