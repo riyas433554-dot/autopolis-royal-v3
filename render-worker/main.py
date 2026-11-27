@@ -236,7 +236,7 @@ def _transcribe_voice_studio_phone(audio_path: str, target: str, headers: dict) 
                 chunk_duration = min(chunk_seconds, max(0.1, duration - offset))
                 caption_block = _phone_text_to_srt(text, float(offset), chunk_duration, next_caption_index)
                 all_srt.append(caption_block)
-                next_caption_index += len(caption_block.split("\\n\\n"))
+                next_caption_index += len(caption_block.split("\n\n"))
     captions = "\n".join(part for part in all_srt if part).strip()
     if not captions:
         return None
