@@ -4,6 +4,7 @@ import supabase from './db-client.js';
 import { buildCompanyOutput } from './company-output.js';
 import { getLlmConfig, callChatCompletion, responseText } from './llm-runtime.js';
 import { executeAgentTool } from './agent-tools.js';
+import { dispatchVideoRender } from './video-renderer.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const MAX_OUTPUT_CHARS = 50000;
@@ -337,7 +338,43 @@ export default async function handler(req, res) {
       detail: agentRow.name + ' · ' + model + ' · ' + task.title,
     });
 
-    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result, output_id: outputRecord?.id || null });
+    let videoRender = null;
+    if (['video', 'reel', 'anime', 'movie'].includes(String(task.deliverable_type || '').toLowerCase())) {
+      const publicBase = String(process.env.AUTOPOLIS_PUBLIC_URL || '').trim();
+      if (!process.env.VIDEO_RENDERER_URL || !process.env.VIDEO_RENDERER_TOKEN || !publicBase) {
+        videoRender = { status: 'not_configured', message: 'External render host requires VIDEO_RENDERER_URL, VIDEO_RENDERER_TOKEN, and AUTOPOLIS_PUBLIC_URL.' };
+      } else {
+        let renderRow = null;
+        try {
+          const { data: insertedRender, error: insertRenderError } = await supabase.from('video_render_jobs')
+            .insert({ task_id: taskId, provider: 'external', status: 'submitting' })
+            .select('id').single();
+          if (insertRenderError) throw insertRenderError;
+          renderRow = insertedRender;
+          const callbackUrl = new URL('/api/video-render-callback', publicBase).toString();
+          const dispatched = await dispatchVideoRender({ task, result, callbackUrl });
+          const { error: renderUpdateError } = await supabase.from('video_render_jobs').update({
+            renderer_job_id: dispatched.job_id,
+            provider: dispatched.provider,
+            status: 'submitted',
+            submitted_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', renderRow.id);
+          if (renderUpdateError) throw renderUpdateError;
+          videoRender = { status: 'submitted', job_id: dispatched.job_id, provider: dispatched.provider };
+        } catch (renderError) {
+          const message = String(renderError?.message || renderError).slice(0, 500);
+          if (renderRow) {
+            await supabase.from('video_render_jobs').update({
+              status: 'failed', error: message, updated_at: new Date().toISOString(),
+            }).eq('id', renderRow.id);
+          }
+          videoRender = { status: 'failed', error: message };
+        }
+      }
+    }
+
+    return res.status(200).json({ ok: true, task_id: taskId, agent_id: agentId, agent_name: agentRow.name, model, result, output_id: outputRecord?.id || null , video_render: videoRender });
   } catch (error) {
     const rawMessage = String(error?.message || error).slice(0, 1000);
     const message = apiKey ? rawMessage.replaceAll(apiKey, '[redacted]') : rawMessage;
