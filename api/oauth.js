@@ -109,7 +109,7 @@ async function metaAccounts(code) {
     const pageToken = page.access_token || accessToken;
     await saveAccount({
       provider: 'meta', accountId: page.id, accountName: page.name,
-      accessToken: pageToken, expiresAt, scopes: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
+      accessToken: pageToken, expiresAt, scopes: 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management',
     });
     saved++;
     const instagram = page.instagram_business_account;
@@ -124,7 +124,7 @@ async function metaAccounts(code) {
   if (!saved) {
     await saveAccount({
       provider: 'meta', accountId: me.id, accountName: me.name || 'Facebook account',
-      accessToken, expiresAt, scopes: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish,business_management',
+      accessToken, expiresAt, scopes: 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management',
     });
     saved = 1;
   }
