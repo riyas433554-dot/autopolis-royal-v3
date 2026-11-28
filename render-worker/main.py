@@ -432,12 +432,12 @@ def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) ->
 
 
 def _select_render_source(configured_provider: str, resolution: str) -> str:
-    if configured_provider not in {"hf_zerogpu", "ai_video_studio"}:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
-    # The public HF Space is fixed to 832x480 landscape, 480x832 portrait,
-    # and 640x640 square. Route high-resolution requests to the Studio provider.
-    if resolution != "source":
-        return "ai_video_studio"
+    if configured_provider not in {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu"}:
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, or ltx_zerogpu")
+    # The public Wan Space is fixed to sub-720p dimensions. Route high-resolution
+    # requests to LTX-2.3 unless an explicit AI Video Studio provider is selected.
+    if resolution != "source" and configured_provider != "ai_video_studio":
+        return "ltx_zerogpu"
     return configured_provider
 
 
@@ -612,6 +612,94 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
     return source
 
 
+def _ltx_request_dimensions(target: tuple[int, int], multiple: int = 32) -> tuple[int, int]:
+    """Round target width/height up to LTX's spatial multiple without downscaling."""
+    width, height = target
+    return ((width + multiple - 1) // multiple * multiple,
+            (height + multiple - 1) // multiple * multiple)
+
+
+def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
+                               resolution: str, temp: str) -> str:
+    """Generate target-resolution scene clips with the public Lightricks LTX-2.3 Space."""
+    space = os.getenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3").strip()
+    token = os.getenv("HF_TOKEN", "").strip() or None
+    client = Client(space, token=token, verbose=False)
+    prompts = _scene_prompts(script, limit=int(os.getenv("LTX_ZEROGPU_SCENE_WORDS", "20")))
+    if not prompts:
+        raise RuntimeError("No script scenes available for LTX ZeroGPU generation")
+    default_max_scenes = "4" if deliverable_type == "reel" else "8"
+    max_scenes = int(os.getenv("LTX_ZEROGPU_MAX_SCENES", default_max_scenes))
+    if max_scenes < 1:
+        raise RuntimeError("LTX_ZEROGPU_MAX_SCENES must be positive")
+    prompts = prompts[:max_scenes]
+    target = _resolution_dimensions(resolution, deliverable_type)
+    if target is None:
+        target = (1024, 1536) if deliverable_type == "reel" else (1536, 1024)
+    target_width, target_height = target
+    request_width, request_height = _ltx_request_dimensions(target)
+    max_clip_seconds = float(os.getenv("LTX_ZEROGPU_MAX_CLIP_SECONDS", "10"))
+    if not 1 <= max_clip_seconds <= 10:
+        raise RuntimeError("LTX_ZEROGPU_MAX_CLIP_SECONDS must be between 1 and 10 seconds")
+
+    clip_paths = []
+    for index, scene in enumerate(prompts):
+        scene_duration = max(2.0, min(max_clip_seconds, round(len(scene.split()) / 2.2, 1)))
+        visual_prompt = (
+            f"Cinematic scene for {title}. Visualize: {scene}. "
+            "Natural motion, coherent subject, deliberate camera movement, "
+            "consistent lighting and art direction, no text, no subtitles, no logos."
+        )
+        result = client.predict(
+            None, visual_prompt, scene_duration, False,
+            int(uuid.uuid4().int % (2**31 - 1)), True,
+            request_height, request_width,
+            api_name="/generate_video",
+        )
+        remote_path = result[0] if isinstance(result, (tuple, list)) else result
+        if isinstance(remote_path, dict):
+            remote_path = remote_path.get("path") or remote_path.get("url")
+        if not remote_path:
+            raise RuntimeError(f"LTX ZeroGPU returned no video for scene {index + 1}")
+        clip_path = os.path.join(temp, f"ltx-clip-{index:03d}.mp4")
+        if str(remote_path).startswith(("https://", "http://")):
+            response = requests.get(str(remote_path), timeout=(20, 900))
+            response.raise_for_status()
+            with open(clip_path, "wb") as output:
+                output.write(response.content)
+        elif os.path.isfile(str(remote_path)):
+            shutil.copyfile(str(remote_path), clip_path)
+        else:
+            raise RuntimeError(f"LTX output file is unavailable for scene {index + 1}")
+        clip_qc = _probe(clip_path)
+        if clip_qc["width"] < target_width or clip_qc["height"] < target_height:
+            raise RuntimeError(
+                "LTX output did not meet requested resolution: "
+                f"wanted at least {target_width}x{target_height}, "
+                f"got {clip_qc['width']}x{clip_qc['height']}"
+            )
+        normalized_path = os.path.join(temp, f"ltx-normalized-{index:03d}.mp4")
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path,
+            "-vf", f"crop={target_width}:{target_height}:(iw-ow)/2:(ih-oh)/2,setsar=1,fps=24",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", normalized_path,
+        ], capture_output=True, text=True, timeout=1800, check=True)
+        clip_paths.append(normalized_path)
+
+    concat_path = os.path.join(temp, "ltx-clips.txt")
+    with open(concat_path, "w", encoding="utf-8") as listing:
+        for path in clip_paths:
+            listing.write("file " + json.dumps(path) + "\\n")
+    source = os.path.join(temp, "ltx-visuals.mp4")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
+        "-c", "copy", source,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+    return source
+
+
 def render_and_callback(job_id: str):
     job = get_job(job_id)
     if not job:
@@ -658,6 +746,10 @@ def render_and_callback(job_id: str):
         final = os.path.join(temp, "autopolis-final.mp4")
         if render_source == "hf_zerogpu":
             source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+        elif render_source == "ltx_zerogpu":
+            source = _render_with_ltx_zerogpu(
+                script, payload["title"], payload["deliverable_type"], resolution, temp,
+            )
         else:
             _download_studio_video(project_id, source)
         source_qc = _probe(source)
@@ -687,6 +779,9 @@ def render_and_callback(job_id: str):
         _validate_narration_coverage(qc["duration_seconds"], voice_duration)
         _validate_resolution_qc(qc, resolution, payload["deliverable_type"])
         qc["resolution_profile"] = resolution
+        qc["render_provider"] = render_source
+        qc["source_width"] = source_qc["width"]
+        qc["source_height"] = source_qc["height"]
         qc["size_bytes"] = os.path.getsize(final)
         qc["captions_burned"] = bool(subtitle_path)
         if caption_error:
