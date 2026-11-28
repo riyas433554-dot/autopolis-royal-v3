@@ -1,6 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
-import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from './video-renderer.js';
+import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, classifyVideoRenderCallback, getRenderCallbackReplayDisposition } from './video-renderer.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -34,8 +34,9 @@ export default async function handler(req, res) {
       .select('*').eq('renderer_job_id', providerJobId).maybeSingle();
     if (jobError) throw jobError;
     if (!job) return res.status(404).json({ error: 'Render job not found' });
-    if (job.status === 'published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
-    if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
+    const replayDisposition = getRenderCallbackReplayDisposition(job.status, job.provider);
+    if (replayDisposition === 'already_published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
+    if (replayDisposition === 'already_processing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     if (req.body?.qc_passed !== true) {
       const failure = String(req.body?.error || 'Renderer reported a failed render/QC').slice(0, 500);
@@ -61,27 +62,63 @@ export default async function handler(req, res) {
       await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: message, updated_at: new Date().toISOString() }).eq('id', job.id);
       return res.status(200).json({ ok: true, status: 'failed', error: message });
     }
+
+    const callbackMode = classifyVideoRenderCallback({ task, provider: job.provider });
+    if (callbackMode.mode === 'reject') {
+      const message = callbackMode.error;
+      await supabase.from('video_render_jobs').update({
+        status: 'failed', qc_passed: false, error: message, updated_at: new Date().toISOString(),
+      }).eq('id', job.id).eq('status', job.status);
+      return res.status(200).json({ ok: true, status: 'failed', error: message });
+    }
     const durationError = validateVideoDuration(task.description, req.body?.qc_report);
     if (durationError) {
       await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: durationError, updated_at: new Date().toISOString() }).eq('id', job.id);
       return res.status(200).json({ ok: true, status: 'failed', error: durationError });
     }
 
+    const narrationTolerance = Number(process.env.VIDEO_QC_MAX_UNNARRATED_SECONDS || 3);
+    const qcError = validateRendererQcReport(req.body?.qc_report, narrationTolerance);
+    if (qcError) {
+      await supabase.from('video_render_jobs').update({
+        status: 'failed', qc_passed: false, error: qcError, updated_at: new Date().toISOString(),
+      }).eq('id', job.id);
+      return res.status(200).json({ ok: true, status: 'failed', error: qcError });
+    }
+
+    if (callbackMode.mode === 'private_test') {
+      const report = { ...(req.body?.qc_report || {}), private_test: true };
+      const { data: privateClaim, error: privateReadyError } = await supabase.from('video_render_jobs').update({
+        status: 'ready', video_url: videoUrl, qc_passed: true, qc_report: report,
+        rendered_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
+      }).eq('id', job.id).eq('status', job.status).select('id').maybeSingle();
+      if (privateReadyError) throw privateReadyError;
+      if (!privateClaim) {
+        return res.status(202).json({ ok: true, status: 'already_processing', private_test: true });
+      }
+      return res.status(200).json({ ok: true, status: 'ready', private_test: true, video_url: videoUrl });
+    }
+
+    const { data: publicClaim, error: claimError } = await supabase.from('video_render_jobs').update({
+      status: 'publishing', video_url: videoUrl, qc_passed: true,
+      qc_report: req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {},
+      rendered_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
+    }).eq('id', job.id).eq('status', job.status).select('id').maybeSingle();
+    if (claimError) throw claimError;
+    if (!publicClaim) {
+      return res.status(202).json({ ok: true, status: 'already_processing' });
+    }
+
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
     if (accountError) throw accountError;
-
-    const { error: readyError } = await supabase.from('video_render_jobs').update({
-      status: account ? 'publishing' : 'ready',
-      video_url: videoUrl,
-      qc_passed: true,
-      qc_report: req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {},
-      rendered_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      error: account ? null : 'QC passed; no connected YouTube account found',
-    }).eq('id', job.id);
-    if (readyError) throw readyError;
-    if (!account) return res.status(200).json({ ok: true, status: 'ready', video_url: videoUrl });
+    if (!account) {
+      const { error: readyError } = await supabase.from('video_render_jobs').update({
+        status: 'ready', error: 'QC passed; no connected YouTube account found', updated_at: new Date().toISOString(),
+      }).eq('id', job.id).eq('status', 'publishing');
+      if (readyError) throw readyError;
+      return res.status(200).json({ ok: true, status: 'ready', video_url: videoUrl });
+    }
 
     const ownerToken = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN || '';
     let uploadResult;
@@ -92,6 +129,9 @@ export default async function handler(req, res) {
       setHeader() {},
       end() {},
     };
+    if (callbackMode.mode !== 'public') {
+      throw new Error('Non-public render callback reached public publisher guard');
+    }
     await youtubePublishHandler({
       method: 'POST',
       headers: { authorization: 'Bearer ' + ownerToken },

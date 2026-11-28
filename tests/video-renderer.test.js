@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, isPrivateVideoTestTask, classifyVideoRenderCallback, getRenderCallbackReplayDisposition } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -13,6 +13,7 @@ test('builds a video render job from a completed task and script', () => {
   assert.equal(payload.deliverable_type, 'reel');
   assert.equal(payload.script, 'Scene 1: product reveal');
   assert.equal(payload.callback_url, 'https://autopolis.example/api/video-render-callback');
+  assert.equal(payload.private_test, false);
 });
 
 test('rejects non-video deliverables and empty scripts', () => {
@@ -182,4 +183,113 @@ test('extracts Scene time-range headers and blockquote narration', () => {
     extractVideoNarration(result),
     'Tasks are created in a queue.\nThe runner selects eligible idle city staff or hired company agents.\nTask claims use database leases.',
   );
+});
+
+test('includes selected customer resolution in render payload', () => {
+  const payload = buildVideoRenderPayload({
+    task: { id: 43, title: 'Cinematic short', deliverable_type: 'video', video_resolution: '1440p' },
+    result: 'Narration',
+  });
+  assert.equal(payload.resolution, '1440p');
+});
+
+test('normalizes resolution only for video deliverables', () => {
+  assert.equal(normalizeVideoResolution('reel', '1440p'), '1440p');
+  assert.equal(normalizeVideoResolution('report', '1440p'), 'source');
+  assert.throws(() => normalizeVideoResolution('video', '4k'), /Unsupported video resolution/);
+});
+
+
+test('renderer callback QC rejects a video whose narration ends materially early', () => {
+  const report = {
+    duration_seconds: 45,
+    voice_duration_seconds: 27.83,
+    width: 960,
+    height: 540,
+    video_codec: 'h264',
+    audio_codec: 'aac',
+    resolution_profile: 'source',
+  };
+  assert.match(validateRendererQcReport(report), /narration coverage/);
+});
+
+test('renderer callback QC requires complete stream and duration metadata', () => {
+  assert.match(validateRendererQcReport({ duration_seconds: 45 }), /QC report/);
+});
+
+test('renderer callback QC accepts complete narration and stream metadata', () => {
+  assert.equal(validateRendererQcReport({
+    duration_seconds: 45,
+    voice_duration_seconds: 43,
+    width: 1920,
+    height: 1080,
+    video_codec: 'h264',
+    audio_codec: 'aac',
+    resolution_profile: 'source',
+  }), null);
+});
+
+
+test('private QC test marker is explicit and suppresses public publishing', () => {
+  const task = { id: 88, title: 'Private QC', deliverable_type: 'video', description: '[AUTOPOLIS PRIVATE QC TEST] verify 720p' };
+  assert.equal(isPrivateVideoTestTask(task), true);
+  assert.equal(isPrivateVideoTestTask({ description: 'ordinary customer video' }), false);
+  assert.equal(isPrivateVideoTestTask({ description: '[autopolis private qc test] 720p' }), false);
+  const payload = buildVideoRenderPayload({
+    task, result: 'Private test narration', callbackUrl: 'https://autopolis.example/api/video-render-callback',
+  });
+  assert.equal(payload.private_test, true);
+});
+
+
+test('render idempotency key changes when requested resolution changes', async () => {
+  const keys = [];
+  for (const resolution of ['720p', '1080p']) {
+    await dispatchVideoRender({
+      task: { id: 91, title: 'Resolution QC', deliverable_type: 'video', video_resolution: resolution },
+      result: 'Same narration',
+      env: { VIDEO_RENDERER_URL: 'https://renderer.example', VIDEO_RENDERER_TOKEN: 'secret' },
+      fetchImpl: async (_url, options) => {
+        keys.push(options.headers['idempotency-key']);
+        return new Response(JSON.stringify({ job_id: 'resolution-' + resolution, status: 'queued' }), { status: 202 });
+      },
+    });
+  }
+  assert.notEqual(keys[0], keys[1]);
+});
+
+
+test('private callback isolation requires both exact task marker and private provider', () => {
+  const markedTask = { description: '[AUTOPOLIS PRIVATE QC TEST] test only' };
+  const ordinaryTask = { description: 'ordinary customer video' };
+  assert.deepEqual(classifyVideoRenderCallback({ task: markedTask, provider: 'private_test' }), { mode: 'private_test' });
+  assert.deepEqual(classifyVideoRenderCallback({ task: ordinaryTask, provider: 'private_test' }), {
+    mode: 'reject', error: 'private_test render job requires the exact private QC task marker',
+  });
+  assert.deepEqual(classifyVideoRenderCallback({ task: markedTask, provider: 'external' }), {
+    mode: 'reject', error: 'Private QC task is missing private_test render-job provider isolation',
+  });
+  assert.deepEqual(classifyVideoRenderCallback({ task: { description: '[autopolis private qc test] lowercase' }, provider: 'external' }), { mode: 'public' });
+});
+
+test('callback replay disposition is idempotent for public jobs and never short-circuits private QC jobs', () => {
+  assert.equal(getRenderCallbackReplayDisposition('published', 'external'), 'already_published');
+  assert.equal(getRenderCallbackReplayDisposition('publishing', 'external'), 'already_processing');
+  assert.equal(getRenderCallbackReplayDisposition('ready', 'external'), 'process');
+  assert.equal(getRenderCallbackReplayDisposition('failed', 'external'), 'process');
+  // Even a corrupted private row marked published/publishing must be revalidated
+  // and handled only by the private ready-state path, never public replay.
+  assert.equal(getRenderCallbackReplayDisposition('published', 'private_test'), 'process');
+  assert.equal(getRenderCallbackReplayDisposition('publishing', 'private_test'), 'process');
+});
+
+test('private callback mode cannot satisfy the public publisher guard', () => {
+  const privateMode = classifyVideoRenderCallback({
+    task: { description: '[AUTOPOLIS PRIVATE QC TEST] no public publish' },
+    provider: 'private_test',
+  });
+  assert.notEqual(privateMode.mode, 'public');
+  assert.equal(classifyVideoRenderCallback({
+    task: { description: 'normal public video' }, provider: 'external',
+  }).mode, 'public');
 });

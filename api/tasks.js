@@ -1,4 +1,5 @@
 import supabase from './db-client.js';
+import { normalizeVideoResolution } from './video-renderer.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,6 +21,12 @@ export default async function handler(req, res) {
       const priority = ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : 'medium';
       const deliverableTypes = ['app', 'website', 'automation', 'game', 'ad', 'video', 'reel', 'anime', 'movie', 'proposal', 'report', 'design', 'code', 'other'];
       const deliverable_type = deliverableTypes.includes(body.deliverable_type) ? body.deliverable_type : 'report';
+      let video_resolution;
+      try {
+        video_resolution = normalizeVideoResolution(deliverable_type, body.video_resolution);
+      } catch (resolutionError) {
+        return res.status(400).json({ error: resolutionError.message });
+      }
       const company_id = body.company_id === null || body.company_id === undefined || body.company_id === ''
         ? null : Number(body.company_id);
       const assigned_agent_id = body.assigned_agent_id === null || body.assigned_agent_id === undefined || body.assigned_agent_id === ''
@@ -55,6 +62,7 @@ export default async function handler(req, res) {
         company_id,
         assigned_agent_id,
         deliverable_type,
+        video_resolution,
         status: 'queued',
         progress: 0
       }).select().single();

@@ -243,3 +243,12 @@ def test_kokoro_hf_fallback_downloads_audio_and_normalizes(monkeypatch, tmp_path
     assert calls[0] == ("client", "test/Kokoro", None)
     assert calls[1] == ("predict", "Hello fallback", 1.0, "af_heart", "/generate_speech")
     assert open(target, "rb").read() == b"normalized-wav"
+
+
+def test_render_request_preserves_private_test_flag():
+    request = main.RenderJobRequest(
+        task_id=12, title="Private QC", deliverable_type="video",
+        script="Private test narration", private_test=True,
+        callback_url="https://autopolis.example/callback",
+    )
+    assert request.private_test is True

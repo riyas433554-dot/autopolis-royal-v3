@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto';
 
 const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
+const VIDEO_RESOLUTIONS = new Set(['source', '720p', '1080p', '1440p']);
+
+export function normalizeVideoResolution(deliverableType, value = 'source') {
+  const type = String(deliverableType || '').trim().toLowerCase();
+  if (!VIDEO_TYPES.has(type)) return 'source';
+  const resolution = String(value || 'source').trim().toLowerCase();
+  if (!VIDEO_RESOLUTIONS.has(resolution)) {
+    throw new Error('Unsupported video resolution profile: ' + resolution);
+  }
+  return resolution;
+}
 
 export function extractVideoNarration(result) {
   const text = typeof result === 'string' ? result.trim() : '';
@@ -91,7 +102,76 @@ export function validateVideoDuration(taskDescription, qcReport) {
   return null;
 }
 
-export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) {
+
+export function isPrivateVideoTestTask(task) {
+  return String(task?.description || '').trimStart().startsWith('[AUTOPOLIS PRIVATE QC TEST]');
+}
+
+export function getRenderCallbackReplayDisposition(status, provider) {
+  // Private QC jobs are never allowed to short-circuit into public-publish replay
+  // handling. Always route them through private task/provider validation and the
+  // private ready-state branch, even if a corrupted or retried row says published.
+  if (String(provider || '').trim() === 'private_test') return 'process';
+  if (status === 'published') return 'already_published';
+  if (status === 'publishing') return 'already_processing';
+  return 'process';
+}
+
+export function classifyVideoRenderCallback({ task, provider }) {
+  const markedPrivate = isPrivateVideoTestTask(task);
+  const privateProvider = String(provider || '').trim() === 'private_test';
+  if (markedPrivate !== privateProvider) {
+    return { mode: 'reject', error: markedPrivate
+      ? 'Private QC task is missing private_test render-job provider isolation'
+      : 'private_test render job requires the exact private QC task marker' };
+  }
+  return { mode: markedPrivate ? 'private_test' : 'public' };
+}
+
+export function validateRendererQcReport(qcReport, maxUnnarratedSeconds = 3) {
+  const report = qcReport && typeof qcReport === 'object' && !Array.isArray(qcReport) ? qcReport : null;
+  if (!report) return 'QC report is required';
+  const duration = Number(report.duration_seconds);
+  const voiceDuration = Number(report.voice_duration_seconds);
+  const width = Number(report.width);
+  const height = Number(report.height);
+  if (!Number.isFinite(duration) || duration <= 0 ||
+      !Number.isFinite(voiceDuration) || voiceDuration <= 0 ||
+      !Number.isInteger(width) || width <= 0 ||
+      !Number.isInteger(height) || height <= 0 ||
+      typeof report.video_codec !== 'string' || !report.video_codec.trim() ||
+      typeof report.audio_codec !== 'string' || !report.audio_codec.trim()) {
+    return 'QC report must include positive duration, narration duration, dimensions, and video/audio codecs';
+  }
+  if (!Number.isFinite(maxUnnarratedSeconds) || maxUnnarratedSeconds < 0) {
+    return 'Narration QC tolerance must be a non-negative number';
+  }
+  const uncovered = Math.max(0, duration - voiceDuration);
+  if (uncovered > maxUnnarratedSeconds) {
+    return 'QC failed: narration coverage is too short; ' +
+      'video=' + duration.toFixed(2) + 's voice=' + voiceDuration.toFixed(2) +
+      's uncovered=' + uncovered.toFixed(2) + 's allowed=' + maxUnnarratedSeconds.toFixed(2) + 's';
+  }
+
+  const profile = String(report.resolution_profile || 'source').toLowerCase();
+  if (profile !== 'source') {
+    const dimensions = {
+      '720p': [1280, 720],
+      '1080p': [1920, 1080],
+      '1440p': [2560, 1440],
+    };
+    const target = dimensions[profile];
+    if (!target) return 'QC report contains an unsupported resolution profile';
+    const expected = report.deliverable_type === 'reel' ? [target[1], target[0]] : target;
+    if (width < expected[0] || height < expected[1]) {
+      return 'QC failed: requested ' + profile + ' profile requires at least ' +
+        expected[0] + 'x' + expected[1] + '; got ' + width + 'x' + height;
+    }
+  }
+  return null;
+}
+
+export function buildVideoRenderPayload({ task, result, callbackUrl, profile, resolution }) {
   const taskId = Number(task?.id);
   if (!Number.isInteger(taskId) || taskId <= 0) throw new Error('A valid task id is required');
   const type = String(task?.deliverable_type || '').trim().toLowerCase();
@@ -100,13 +180,18 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
   const script = extractVideoNarration(result);
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
+  const requestedResolution = normalizeVideoResolution(
+    type, resolution || task?.video_resolution || task?.resolution || 'source',
+  );
   const payload = {
     task_id: taskId,
+    private_test: isPrivateVideoTestTask(task),
     title: title.slice(0, 100),
     description: extractYoutubeDescription(result, task?.description),
     deliverable_type: type,
     script,
     profile: String(profile || 'cinematic').slice(0, 40),
+    resolution: requestedResolution,
   };
   if (callbackUrl) {
     const callback = new URL(callbackUrl);
@@ -121,6 +206,7 @@ export async function dispatchVideoRender({
   result,
   callbackUrl,
   profile,
+  resolution,
   env = process.env,
   fetchImpl = fetch,
 }) {
@@ -139,13 +225,17 @@ export async function dispatchVideoRender({
   endpoint.search = '';
   endpoint.hash = '';
 
-  const payload = buildVideoRenderPayload({ task, result, callbackUrl, profile: profile || env.VIDEO_RENDER_PROFILE });
+  const payload = buildVideoRenderPayload({
+    task, result, callbackUrl,
+    profile: profile || env.VIDEO_RENDER_PROFILE,
+    resolution: resolution || task?.video_resolution || task?.resolution || env.VIDEO_RENDER_RESOLUTION,
+  });
   const response = await fetchImpl(endpoint.toString(), {
     method: 'POST',
     headers: {
       authorization: 'Bearer ' + token,
       'content-type': 'application/json',
-      'idempotency-key': 'autopolis-task-' + payload.task_id + '-' + createHash('sha256').update(payload.script).digest('hex').slice(0, 16),
+      'idempotency-key': 'autopolis-task-' + payload.task_id + '-' + createHash('sha256').update(payload.script + '\\0' + payload.resolution).digest('hex').slice(0, 16),
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000),
