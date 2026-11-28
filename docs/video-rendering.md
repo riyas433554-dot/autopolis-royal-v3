@@ -19,7 +19,7 @@ Use [VoiceStudio](https://github.com/debpalash/VoiceStudio) as a separate local/
 Autopolis sends an authenticated JSON `POST {VIDEO_RENDERER_URL}/v1/jobs`:
 - `Authorization: Bearer VIDEO_RENDERER_TOKEN`
 - `Idempotency-Key: autopolis-task-{task_id}`
-- `{ task_id, title, description, deliverable_type, script, profile, callback_url }`
+- `{ task_id, title, description, deliverable_type, script, profile, resolution, callback_url }`; `resolution` is `source|720p|1080p|1440p` and is included in the idempotency key.
 
 The renderer must return HTTP 202 with `{ job_id, status: "queued" }`. `job_id` must be stable for the idempotency key.
 
@@ -28,6 +28,8 @@ When the MP4 is finished, the renderer requests short-lived Supabase signed uplo
 - `{ job_id, video_url, qc_passed: true, qc_report }`
 
 Do not call the callback until QC verifies a non-empty playable MP4, video and audio streams, duration, and the final file size. The current YouTube publisher limit is 100 MB. The media URL must be HTTPS and its hostname must be Supabase or be listed in `AUTOPOLIS_MEDIA_HOSTS`.
+
+For a named resolution profile, the worker must report actual final width/height and pass dimension + aspect-ratio QC. Do not claim native generation when a model-upscale/post-process stage was used. `source` preserves the provider output; a named profile must fail if the renderer cannot meet it.
 
 ## Autopolis environment
 
