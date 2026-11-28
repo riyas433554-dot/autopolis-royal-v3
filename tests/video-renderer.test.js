@@ -272,11 +272,15 @@ test('private callback isolation requires both exact task marker and private pro
   assert.deepEqual(classifyVideoRenderCallback({ task: { description: '[autopolis private qc test] lowercase' }, provider: 'external' }), { mode: 'public' });
 });
 
-test('callback replay disposition is idempotent for published and in-flight jobs', () => {
-  assert.equal(getRenderCallbackReplayDisposition('published'), 'already_published');
-  assert.equal(getRenderCallbackReplayDisposition('publishing'), 'already_processing');
-  assert.equal(getRenderCallbackReplayDisposition('ready'), 'process');
-  assert.equal(getRenderCallbackReplayDisposition('failed'), 'process');
+test('callback replay disposition is idempotent for public jobs and never short-circuits private QC jobs', () => {
+  assert.equal(getRenderCallbackReplayDisposition('published', 'external'), 'already_published');
+  assert.equal(getRenderCallbackReplayDisposition('publishing', 'external'), 'already_processing');
+  assert.equal(getRenderCallbackReplayDisposition('ready', 'external'), 'process');
+  assert.equal(getRenderCallbackReplayDisposition('failed', 'external'), 'process');
+  // Even a corrupted private row marked published/publishing must be revalidated
+  // and handled only by the private ready-state path, never public replay.
+  assert.equal(getRenderCallbackReplayDisposition('published', 'private_test'), 'process');
+  assert.equal(getRenderCallbackReplayDisposition('publishing', 'private_test'), 'process');
 });
 
 test('private callback mode cannot satisfy the public publisher guard', () => {
