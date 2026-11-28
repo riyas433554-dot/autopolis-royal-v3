@@ -368,10 +368,14 @@ def _probe(path: str) -> dict:
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
     if not video or not audio or duration <= 0:
         raise RuntimeError("QC failed: MP4 must contain playable video and audio streams and positive duration")
+    width = int(video.get("width") or 0)
+    height = int(video.get("height") or 0)
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"QC failed: video dimensions must be positive; got {width}x{height}")
     return {
         "duration_seconds": round(duration, 2),
-        "width": int(video.get("width") or 0),
-        "height": int(video.get("height") or 0),
+        "width": width,
+        "height": height,
         "video_codec": video.get("codec_name"),
         "audio_codec": audio.get("codec_name"),
     }
@@ -395,7 +399,26 @@ def _download_studio_video(project_id: str, target: str):
         raise RuntimeError("AI Video Studio returned an empty MP4")
 
 
+def _validate_narration_coverage(video_duration: float, voice_duration: float) -> None:
+    """Fail closed when narration is missing or ends materially before the video."""
+    if video_duration <= 0:
+        raise RuntimeError("QC failed: video duration must be positive")
+    if voice_duration <= 0:
+        raise RuntimeError("QC failed: narration duration must be positive")
+    tolerance = float(os.getenv("VIDEO_QC_MAX_UNNARRATED_SECONDS", "3.0"))
+    if tolerance < 0:
+        raise RuntimeError("VIDEO_QC_MAX_UNNARRATED_SECONDS must be non-negative")
+    unvoiced_seconds = max(0.0, video_duration - voice_duration)
+    if unvoiced_seconds > tolerance:
+        raise RuntimeError(
+            "QC failed: narration coverage is too short; "
+            f"video={video_duration:.2f}s voice={voice_duration:.2f}s "
+            f"uncovered={unvoiced_seconds:.2f}s allowed={tolerance:.2f}s"
+        )
+
+
 def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float, subtitle_path: str | None = None):
+    _validate_narration_coverage(video_duration, voice_duration)
     duration = max(video_duration, voice_duration)
     target_video_bps = int((MAX_VIDEO_BYTES * 0.82 * 8 / max(duration, 1)) - 160000)
     target_video_bps = max(250000, min(target_video_bps, 6000000))
