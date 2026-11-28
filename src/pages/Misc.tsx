@@ -151,36 +151,58 @@ export function ConnectedPage() {
   const { user } = useAuth();
   const googleSignIn = !!user && user.app_metadata?.provider === 'google';
   const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [err, setErr] = useState('');
-  const [active, setActive] = useState<Record<string, number>>({});
   const [ownerToken, setOwnerToken] = useState(''); const [connecting, setConnecting] = useState(''); const [oauthNote, setOauthNote] = useState('');
   const load = async () => { setLoading(true); setErr(''); try { setData(await api('/api/connected')); const params = new URLSearchParams(window.location.search); if (params.get('oauth_status') === 'success') setOauthNote('Connected ' + params.get('provider') + ' account(s): ' + (params.get('connected') || '1') + '.'); else if (params.get('oauth_status') === 'error') setOauthNote(params.get('oauth_message') || 'OAuth connection failed.'); } catch (e: any) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
-  const connect = async (provider: string) => { if (!ownerToken.trim()) { setOauthNote('Enter the owner lifecycle token to connect an account.'); return; } setConnecting(provider); setOauthNote(''); try { const result = await api('/api/connected', { method: 'POST', headers: { Authorization: 'Bearer ' + ownerToken.trim() }, body: JSON.stringify({ provider }) }); if (!result.authUrl) throw new Error('OAuth URL was not returned'); window.location.assign(result.authUrl); } catch (e: any) { setOauthNote(e.message || 'Could not start OAuth.'); setConnecting(''); } };
-  const disconnect = async (id: number) => { try { await api('/api/connected', { method: 'DELETE', headers: { Authorization: 'Bearer ' + ownerToken.trim() }, body: JSON.stringify({ id }) }); load(); } catch (e: any) { setOauthNote(e.message || 'Disconnect failed.'); } };
-  const meta = { meta: { icon: '📘', color: '#1877F2', cta: 'Connect Facebook + Instagram (Meta)' }, youtube: { icon: '▶️', color: '#FF0000', cta: 'Connect YouTube (Google)' } } as Record<string, any>;
+  const connect = async (provider: string) => { if (!ownerToken.trim()) { setOauthNote('Enter the owner lifecycle token to add an account.'); return; } setConnecting(provider); setOauthNote(''); try { const result = await api('/api/connected', { method: 'POST', headers: { Authorization: 'Bearer ' + ownerToken.trim() }, body: JSON.stringify({ provider }) }); if (!result.authUrl) throw new Error('OAuth URL was not returned'); window.location.assign(result.authUrl); } catch (e: any) { setOauthNote(e.message || 'Could not start OAuth.'); setConnecting(''); } };
+  const disconnect = async (id: number) => { try { await api('/api/connected', { method: 'DELETE', headers: { Authorization: 'Bearer ' + ownerToken.trim() }, body: JSON.stringify({ id }) }); await load(); } catch (e: any) { setOauthNote(e.message || 'Disconnect failed.'); } };
+  const platformMeta: Record<string, any> = {
+    meta: { icon: '📘', color: '#1877F2', subtitle: 'Facebook Pages and linked Instagram Business/Creator accounts', platforms: 'Facebook · Instagram' },
+    youtube: { icon: '▶️', color: '#FF0000', subtitle: 'YouTube channels connected through Google OAuth', platforms: 'YouTube' },
+  };
+  const futurePlatforms = [
+    { id: 'x', icon: '𝕏', name: 'X (Twitter)', detail: 'OAuth app and publishing API setup pending' },
+    { id: 'linkedin', icon: '💼', name: 'LinkedIn', detail: 'OAuth app and publishing API setup pending' },
+  ];
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <PageHead title="Connected Accounts" sub="Login-to-connect only (Metricool-style). An account shows Connected only after a real OAuth succeeds and is stored server-side. Secrets live in server env vars — never in frontend code, never shown here." badge="live" />
-      <div className="mb-3 rounded-3xl border border-amber-500/20 bg-amber-500/[0.04] p-4"><label className="block text-xs font-bold text-slate-200">Owner lifecycle token <input type="password" value={ownerToken} onChange={e => setOwnerToken(e.target.value)} autoComplete="off" placeholder="Paste server owner token (not stored)" className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" /></label><p className="mt-1.5 text-[10px] text-slate-500">Used only for owner-authorized connect/disconnect requests; kept in this page's memory only.</p></div>
+      <PageHead title="Connected Accounts" sub="Connect multiple real accounts per platform. Provider tokens are encrypted and stored server-side; account credentials are never displayed." badge="live" />
+      <div className="mb-3 rounded-3xl border border-amber-500/20 bg-amber-500/[0.04] p-4"><label className="block text-xs font-bold text-slate-200">Owner lifecycle token <input type="password" value={ownerToken} onChange={e => setOwnerToken(e.target.value)} autoComplete="off" placeholder="Paste server owner token (not stored)" className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-sm text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" /></label><p className="mt-1.5 text-[10px] text-slate-500">Required to add or disconnect accounts. Kept in this page's memory only.</p></div>
       {oauthNote && <p className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-100">{oauthNote}</p>}
-      {loading ? <Spinner label="Checking provider setup…" /> : err ? <ErrorBox message={err} onRetry={load} /> : (
+      {loading ? <Spinner label="Checking connected platforms…" /> : err ? <ErrorBox message={err} onRetry={load} /> : (
         <div className="space-y-3">
-          {(data?.providers || []).map((p: any) => { const m = meta[p.id] || { icon: '🔌', color: '#c9a227', cta: 'Connect' }; const accs = p.accounts || []; const current = accs.find((a: any) => a.id === active[p.id]) || accs[0]; return (
-            <div key={p.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg" style={{ background: m.color + '33' }}>{m.icon}</span>
-                <div className="min-w-0 flex-1"><p className="font-bold text-white">{p.name}</p><p className={`text-[11px] font-bold ${p.status === 'connected' ? 'text-emerald-300' : p.status === 'ready_to_connect' ? 'text-sky-300' : 'text-amber-300'}`}>{p.status === 'connected' ? `● Connected (${accs.length} account${accs.length > 1 ? 's' : ''})` : p.status === 'ready_to_connect' ? '◐ Credentials present — ready to connect' : '○ Setup required'}</p></div>
-                <button disabled={!p.oauthReady || !ownerToken.trim() || connecting === p.id} title={p.oauthReady ? (ownerToken.trim() ? "Start provider OAuth" : "Enter owner token first") : "Configure the server environment variables shown below"} onClick={() => void connect(p.id)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/5 px-4 py-2.5 text-xs font-bold text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"><Plug size={13} /> {connecting === p.id ? "Opening…" : m.cta}</button></div>
-              {accs.length > 0 && current && (<div className="mt-3 rounded-2xl bg-black/25 p-3">
-                <div className="flex flex-wrap items-center gap-2.5"><Avatar name={current.account_name} color={m.color} size={36} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{current.account_name}</p><p className="text-[10px] text-slate-500">Last sync: {current.last_sync ? new Date(current.last_sync).toLocaleString('en-GB') : 'never recorded'}</p></div>
-                {accs.length > 1 && <select value={current.id} onChange={e => setActive({ ...active, [p.id]: Number(e.target.value) })} className="rounded-xl border border-white/10 bg-[#151228] px-2.5 py-2 text-xs text-white">{accs.map((a: any) => <option key={a.id} value={a.id}>{a.account_name}</option>)}</select>}
-                <button disabled={!ownerToken.trim()} onClick={() => disconnect(current.id)} className="rounded-full bg-red-500/20 px-3.5 py-2 text-[11px] font-bold text-red-200 disabled:opacity-40">Disconnect</button></div>
-                <p className="mt-1.5 text-[10px] text-slate-500">Account switcher: scheduling in Social Mgmt targets the selected account (Demo mode until connected).</p></div>)}
-              <p className="mt-2.5 text-xs leading-relaxed text-slate-400">{p.note}</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">{p.env.map((k: string) => <span key={k} className={`rounded-full border px-2.5 py-1 font-mono text-[10px] ${p.envPresent?.[k] ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>{p.envPresent?.[k] ? '✓' : '✕'} {k} (server env)</span>)}<span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 font-mono text-[10px] text-slate-300">redirect URI: /api/oauth/{p.id}/callback</span></div>
-            </div>); })}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-4 opacity-80"><p className="text-sm font-bold text-white">Later</p><p className="mt-1 text-xs leading-relaxed text-slate-400">𝕏 X (Twitter) · 💼 LinkedIn — planned later, intentionally not offered until their OAuth apps exist. <b className="text-slate-200">Google Sign-In</b> (login only) is separate and already live: {googleSignIn ? 'you are signed in with Google ✓ (no publishing access granted).' : <>try it on the <Link to="/login" className="text-amber-300 underline">login page</Link>.</>}</p></div>
+          {(data?.providers || []).map((p: any) => {
+            const m = platformMeta[p.id] || { icon: '🔌', color: '#c9a227', subtitle: p.note || 'Provider account connection' };
+            const accs = p.accounts || [];
+            const ready = !!p.oauthReady;
+            return (
+              <section key={p.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg" style={{ background: m.color + '33' }}>{m.icon}</span>
+                  <div className="min-w-0 flex-1"><h2 className="font-bold text-white">{p.name}</h2><p className="text-[11px] text-slate-400">{m.subtitle}</p><p className={`mt-0.5 text-[11px] font-bold ${accs.length ? 'text-emerald-300' : ready ? 'text-sky-300' : 'text-amber-300'}`}>{accs.length ? '● ' + accs.length + ' connected account' + (accs.length === 1 ? '' : 's') : ready ? '◐ Ready to connect' : '○ Setup required'}</p></div>
+                  <button onClick={() => void connect(p.id)} disabled={!ready || !ownerToken.trim() || connecting === p.id} title={!ready ? 'Configure the listed server environment variables first' : !ownerToken.trim() ? 'Enter owner token first' : 'Add another account'} className="flex shrink-0 items-center gap-1 rounded-full border border-amber-400/35 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-200 hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40">{connecting === p.id ? 'Opening…' : '+ Add account'}</button>
+                </div>
+                {accs.length > 0 && <div className="mt-3 space-y-2">{accs.map((account: any) => (
+                  <article key={account.id} className="flex min-w-0 items-center gap-2.5 rounded-2xl border border-white/5 bg-black/25 p-3">
+                    <Avatar name={account.account_name} color={m.color} size={36} />
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{account.account_name}</p><p className="text-[10px] text-slate-500">{account.status === 'connected' ? 'Connected' : account.status || 'Account saved'} · Last sync: {account.last_sync ? new Date(account.last_sync).toLocaleString('en-GB') : 'not recorded'}</p></div>
+                    <button disabled={!ownerToken.trim()} onClick={() => void disconnect(account.id)} className="shrink-0 rounded-full bg-red-500/15 px-3 py-2 text-[10px] font-bold text-red-200 disabled:opacity-40">Disconnect</button>
+                  </article>
+                ))}</div>}
+                {accs.length === 0 && <p className="mt-3 rounded-2xl bg-black/20 p-3 text-xs text-slate-500">No accounts connected yet. Use “Add account” to sign in through the provider.</p>}
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">{p.note}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">{p.env.map((key: string) => <span key={key} className={`rounded-full border px-2.5 py-1 font-mono text-[10px] ${p.envPresent?.[key] ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>{p.envPresent?.[key] ? '✓' : '✕'} {key} (server env)</span>)}<span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 font-mono text-[10px] text-slate-300">Callback: /api/oauth/{p.id}/callback</span></div>
+              </section>
+            );
+          })}
+          <section className="rounded-3xl border border-white/10 bg-white/[0.02] p-4">
+            <h2 className="text-sm font-bold text-white">More platforms</h2>
+            <p className="mt-1 text-xs text-slate-400">These platforms are listed for the account manager, but cannot be connected until their OAuth/API integration is implemented and provider credentials are configured.</p>
+            <div className="mt-3 space-y-2">{futurePlatforms.map(platform => <div key={platform.id} className="flex items-center gap-3 rounded-2xl border border-white/5 bg-black/20 p-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-lg">{platform.icon}</span><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">{platform.name}</p><p className="text-[11px] text-slate-500">{platform.detail}</p></div><span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-bold text-slate-500">Not ready</span></div>)}</div>
+          </section>
+          <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.05] p-4 text-xs leading-relaxed text-slate-300"><b className="text-amber-200">Publishing rule:</b> in <Link to="/manage" className="text-amber-300 underline">Social Mgmt</Link>, a post is only published externally when its target account is connected and the provider API accepts it. Until then, posts stay in the planner / Demo mode. Autopolis Social (internal feed) remains separate.</div>
           {data?.tableMissing && <SetupRequired what="Connected Accounts storage" onRetry={load} />}
-          <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.05] p-4 text-xs leading-relaxed text-slate-300"><b className="text-amber-200">Publishing rule:</b> in <Link to="/manage" className="text-amber-300 underline">Social Mgmt</Link>, a post is only really published when the target account above is Connected. Until then everything stays in the planner, labelled <b>Demo mode</b>. Autopolis Social (internal feed) works fully today.</div>
+          <p className="text-[10px] text-slate-500">Google Sign-In for Autopolis login is separate from YouTube publishing: {googleSignIn ? 'signed in with Google (login only).' : <>not used for provider publishing; try the <Link to="/login" className="text-amber-300 underline">login page</Link>.</>}</p>
         </div>
       )}
     </div>
