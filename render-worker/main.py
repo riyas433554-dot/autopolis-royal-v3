@@ -658,7 +658,6 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
     """Generate target-resolution scene clips with the public Lightricks LTX-2.3 Space."""
     space = os.getenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3").strip()
     token = os.getenv("HF_TOKEN", "").strip() or None
-    client = Client(space, token=token, verbose=False)
     prompts = _scene_prompts(script, limit=int(os.getenv("LTX_ZEROGPU_SCENE_WORDS", "24")))
     if not prompts:
         raise RuntimeError("No script scenes available for LTX ZeroGPU generation")
@@ -684,6 +683,9 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
             "Use a provider with verified native target-resolution output."
         )
     request_width, request_height = _ltx_request_dimensions(target)
+    # Initialize the remote client only after local profile validation, so
+    # rejected dimensions do not even contact the public Space.
+    client = Client(space, token=token, verbose=False)
     max_clip_seconds = float(os.getenv("LTX_ZEROGPU_MAX_CLIP_SECONDS", "10"))
     if not 1 <= max_clip_seconds <= 10:
         raise RuntimeError("LTX_ZEROGPU_MAX_CLIP_SECONDS must be between 1 and 10 seconds")
