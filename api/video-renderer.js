@@ -91,7 +91,7 @@ export function validateVideoDuration(taskDescription, qcReport) {
   return null;
 }
 
-export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) {
+export function buildVideoRenderPayload({ task, result, callbackUrl, profile, resolution }) {
   const taskId = Number(task?.id);
   if (!Number.isInteger(taskId) || taskId <= 0) throw new Error('A valid task id is required');
   const type = String(task?.deliverable_type || '').trim().toLowerCase();
@@ -100,6 +100,11 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
   const script = extractVideoNarration(result);
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
+  const requestedResolution = String(resolution || task?.video_resolution || task?.resolution || 'source').trim().toLowerCase();
+  const supportedResolutions = new Set(['source', '720p', '1080p', '1440p']);
+  if (!supportedResolutions.has(requestedResolution)) {
+    throw new Error('Unsupported video resolution profile: ' + requestedResolution);
+  }
   const payload = {
     task_id: taskId,
     title: title.slice(0, 100),
@@ -107,6 +112,7 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile }) 
     deliverable_type: type,
     script,
     profile: String(profile || 'cinematic').slice(0, 40),
+    resolution: requestedResolution,
   };
   if (callbackUrl) {
     const callback = new URL(callbackUrl);
@@ -121,6 +127,7 @@ export async function dispatchVideoRender({
   result,
   callbackUrl,
   profile,
+  resolution,
   env = process.env,
   fetchImpl = fetch,
 }) {
@@ -139,13 +146,17 @@ export async function dispatchVideoRender({
   endpoint.search = '';
   endpoint.hash = '';
 
-  const payload = buildVideoRenderPayload({ task, result, callbackUrl, profile: profile || env.VIDEO_RENDER_PROFILE });
+  const payload = buildVideoRenderPayload({
+    task, result, callbackUrl,
+    profile: profile || env.VIDEO_RENDER_PROFILE,
+    resolution: resolution || task?.video_resolution || task?.resolution || env.VIDEO_RENDER_RESOLUTION,
+  });
   const response = await fetchImpl(endpoint.toString(), {
     method: 'POST',
     headers: {
       authorization: 'Bearer ' + token,
       'content-type': 'application/json',
-      'idempotency-key': 'autopolis-task-' + payload.task_id + '-' + createHash('sha256').update(payload.script).digest('hex').slice(0, 16),
+      'idempotency-key': 'autopolis-task-' + payload.task_id + '-' + createHash('sha256').update(payload.script + '\\0' + payload.resolution).digest('hex').slice(0, 16),
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000),
