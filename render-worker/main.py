@@ -47,6 +47,17 @@ class RenderJobRequest(BaseModel):
     def require_enabled_high_resolution_provider(cls, value: str) -> str:
         provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+        if provider == "auto":
+            if value == "source":
+                provider = "hf_zerogpu"
+            elif value == "720p":
+                if not os.getenv("AGNES_API_KEY", "").strip():
+                    raise ValueError("AGNES_API_KEY is required for automatic 720p video rendering")
+                provider = "agnes_video"
+            elif ltx_enabled:
+                provider = "ltx_zerogpu"
+            else:
+                raise ValueError("Auto provider has no verified 1080p/1440p backend; configure AI Video Studio or enable a reviewed LTX provider")
         if provider == "ltx_zerogpu" and not ltx_enabled:
             raise ValueError("LTX ZeroGPU is disabled; enable it only after license and quota review")
         if provider == "agnes_video" and value in {"1080p", "1440p"}:
@@ -460,26 +471,35 @@ def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) ->
 
 def _select_render_source(configured_provider: str, resolution: str,
                           ltx_enabled: bool | None = None) -> str:
-    allowed = {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu", "agnes_video"}
-    if configured_provider not in allowed:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, ltx_zerogpu, or agnes_video")
     if ltx_enabled is None:
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    if configured_provider == "auto":
+        if resolution == "source":
+            configured_provider = "hf_zerogpu"
+        elif resolution == "720p":
+            if not os.getenv("AGNES_API_KEY", "").strip():
+                raise RuntimeError("AGNES_API_KEY is required for automatic 720p video rendering")
+            configured_provider = "agnes_video"
+        elif ltx_enabled:
+            configured_provider = "ltx_zerogpu"
+        else:
+            raise RuntimeError("Auto provider has no verified 1080p/1440p backend; configure AI Video Studio or enable a reviewed LTX provider")
+    allowed = {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu", "agnes_video"}
+    if configured_provider not in allowed:
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, ltx_zerogpu, agnes_video, or auto")
     if configured_provider == "ltx_zerogpu" and not ltx_enabled:
         raise RuntimeError("LTX ZeroGPU is disabled; enable it only after license and quota review")
     if configured_provider == "agnes_video" and resolution in {"1080p", "1440p"}:
         raise RuntimeError("Agnes Video Flash only supports 720p; 1080p/1440p require a paid or separately verified provider")
-    # Agnes Video Flash provides an explicit 720P profile. It does not use the LTX gate.
     if configured_provider == "agnes_video":
+        if not os.getenv("AGNES_API_KEY", "").strip():
+            raise RuntimeError("AGNES_API_KEY is required for the Agnes Video provider")
         return "agnes_video"
-    # The public Wan Space is fixed to sub-720p dimensions. Route high-resolution
-    # requests to LTX-2.3 only when its license/quota gate has been explicitly enabled.
     if resolution != "source" and configured_provider != "ai_video_studio":
         if not ltx_enabled:
             raise RuntimeError("LTX ZeroGPU is disabled; high-resolution rendering is unavailable until license and quota review")
         return "ltx_zerogpu"
     return configured_provider
-
 
 def _studio_render_options(resolution: str) -> dict:
     """Request provider-side model upscaling for a named output profile."""
