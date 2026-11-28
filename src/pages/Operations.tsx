@@ -14,12 +14,12 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
   const [taskFilter, setTaskFilter] = useState('All'); const [actFilter, setActFilter] = useState('All');
   const [form, setForm] = useState({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report', video_resolution: 'source' });
   const [saving, setSaving] = useState(false); const [note, setNote] = useState('');
-  const fetchOperationsData = async () => Promise.all([
+  const fetchOperationsData = useCallback(async () => Promise.all([
     api('/api/buildings'), api('/api/agents'), api('/api/tasks'), api('/api/activity'), api('/api/companies'),
-  ]);
-  const applyOperationsData = ([b, a, t, ac, co]: Awaited<ReturnType<typeof fetchOperationsData>>) => {
+  ]), []);
+  const applyOperationsData = useCallback(([b, a, t, ac, co]: Awaited<ReturnType<typeof fetchOperationsData>>) => {
     setBuildings(b); setAgents(a); setTasks(t); setActivity(ac); setCompanies(Array.isArray(co) ? co : []);
-  };
+  }, []);
   const load = async () => {
     setLoading(true); setErr('');
     try { applyOperationsData(await fetchOperationsData()); }
@@ -33,7 +33,7 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
       .catch((e: unknown) => { if (active) setErr(e instanceof Error ? e.message : 'Request failed'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [fetchOperationsData, applyOperationsData]);
   const bName = useCallback((s: string) => buildings.find(b => b.slug === s)?.name || s, [buildings]);
   const alerts = useMemo(() => [...tasks.filter(t => t.status === 'blocked').map(t => ({ id: 't' + t.id, text: `Blocked task: “${t.title}” at ${bName(t.building_slug)}`, link: '/building/' + t.building_slug })), ...agents.filter(a => a.status === 'error').map(a => ({ id: 'a' + a.id, text: `Agent ${a.name} (${a.code}) flagged with error status at ${bName(a.building_slug)}`, link: '/agents' })), ...buildings.filter(b => b.status === 'maintenance').map(b => ({ id: 'b' + b.id, text: `${b.name} is under maintenance`, link: '/building/' + b.slug }))], [tasks, agents, buildings, bName]);
   const createTask = async (e: React.FormEvent) => {
