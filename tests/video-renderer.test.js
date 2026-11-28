@@ -183,3 +183,11 @@ test('extracts Scene time-range headers and blockquote narration', () => {
     'Tasks are created in a queue.\nThe runner selects eligible idle city staff or hired company agents.\nTask claims use database leases.',
   );
 });
+
+test('includes selected customer resolution in render payload', () => {
+  const payload = buildVideoRenderPayload({
+    task: { id: 43, title: 'Cinematic short', deliverable_type: 'video', video_resolution: '1440p' },
+    result: 'Narration',
+  });
+  assert.equal(payload.resolution, '1440p');
+});
