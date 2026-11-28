@@ -4,7 +4,7 @@ import main
 
 
 def test_public_worker_surface_hides_api_schema_and_docs(monkeypatch, tmp_path):
-    monkeypatch.setenv("RENDER_WORKER_DB", str(tmp_path / "worker.sqlite"))
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "worker.sqlite"))
     with TestClient(main.app) as client:
         assert client.get("/health").status_code == 200
         assert client.get("/openapi.json").status_code == 404
