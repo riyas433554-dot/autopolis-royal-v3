@@ -45,6 +45,6 @@ jobs:
             echo "No changed JS/TS files to lint."
             exit 0
           fi
-          printf '%s\\n' "$files" | xargs -r npx eslint
+          printf '%s\n' "$files" | xargs -r npx eslint
       - name: Production build
         run: npm run build
