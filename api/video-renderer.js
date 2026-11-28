@@ -107,7 +107,11 @@ export function isPrivateVideoTestTask(task) {
   return String(task?.description || '').trimStart().startsWith('[AUTOPOLIS PRIVATE QC TEST]');
 }
 
-export function getRenderCallbackReplayDisposition(status) {
+export function getRenderCallbackReplayDisposition(status, provider) {
+  // Private QC jobs are never allowed to short-circuit into public-publish replay
+  // handling. Always route them through private task/provider validation and the
+  // private ready-state branch, even if a corrupted or retried row says published.
+  if (String(provider || '').trim() === 'private_test') return 'process';
   if (status === 'published') return 'already_published';
   if (status === 'publishing') return 'already_processing';
   return 'process';
