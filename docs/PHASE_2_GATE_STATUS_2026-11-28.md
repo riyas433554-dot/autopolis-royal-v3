@@ -51,3 +51,10 @@ No Phase 3 work, production migration, main-branch change, or public media publi
 - Verification at fix head: Autopolis CI `46156631865` PASS; Build Verify `46156631892` PASS; dedicated Video render worker tests `46156631886` PASS. These are branch CI results only; no production callback deployment was performed.
 - Private test remains outstanding. Do not dispatch a task with the current callback until the test is isolated from public YouTube publishing; the callback's existing production behavior auto-publishes when a YouTube account is connected.
 - Phase 2 remains OPEN: no newly generated private 720p artifact has been downloaded and visually/technically inspected. 1080p/1440p remain unverified.
+
+## Private QC execution path — implementation in branch
+
+- A task description beginning exactly with `[AUTOPOLIS PRIVATE QC TEST]` is now tagged as a private test through the agent-run → worker payload → render-job metadata path.
+- The callback validates the QC report, then stores a successful private test as `ready` and returns without invoking YouTube publishing. Ordinary video tasks retain existing auto-publish behavior.
+- The marker is intentionally case-sensitive and explicit; do not add it to customer tasks. Use it only on a dedicated internal test task with non-confidential content.
+- This is implemented on the PR branch only. Do not submit the private test until this branch is deployed to the app callback service and the callback route is confirmed to use the private-test branch. No new test job has been submitted.
