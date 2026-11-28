@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, isPrivateVideoTestTask } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, isPrivateVideoTestTask, classifyVideoRenderCallback, getRenderCallbackReplayDisposition } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -256,4 +256,36 @@ test('render idempotency key changes when requested resolution changes', async (
     });
   }
   assert.notEqual(keys[0], keys[1]);
+});
+
+
+test('private callback isolation requires both exact task marker and private provider', () => {
+  const markedTask = { description: '[AUTOPOLIS PRIVATE QC TEST] test only' };
+  const ordinaryTask = { description: 'ordinary customer video' };
+  assert.deepEqual(classifyVideoRenderCallback({ task: markedTask, provider: 'private_test' }), { mode: 'private_test' });
+  assert.deepEqual(classifyVideoRenderCallback({ task: ordinaryTask, provider: 'private_test' }), {
+    mode: 'reject', error: 'private_test render job requires the exact private QC task marker',
+  });
+  assert.deepEqual(classifyVideoRenderCallback({ task: markedTask, provider: 'external' }), {
+    mode: 'reject', error: 'Private QC task is missing private_test render-job provider isolation',
+  });
+  assert.deepEqual(classifyVideoRenderCallback({ task: { description: '[autopolis private qc test] lowercase' }, provider: 'external' }), { mode: 'public' });
+});
+
+test('callback replay disposition is idempotent for published and in-flight jobs', () => {
+  assert.equal(getRenderCallbackReplayDisposition('published'), 'already_published');
+  assert.equal(getRenderCallbackReplayDisposition('publishing'), 'already_processing');
+  assert.equal(getRenderCallbackReplayDisposition('ready'), 'process');
+  assert.equal(getRenderCallbackReplayDisposition('failed'), 'process');
+});
+
+test('private callback mode cannot satisfy the public publisher guard', () => {
+  const privateMode = classifyVideoRenderCallback({
+    task: { description: '[AUTOPOLIS PRIVATE QC TEST] no public publish' },
+    provider: 'private_test',
+  });
+  assert.notEqual(privateMode.mode, 'public');
+  assert.equal(classifyVideoRenderCallback({
+    task: { description: 'normal public video' }, provider: 'external',
+  }).mode, 'public');
 });
