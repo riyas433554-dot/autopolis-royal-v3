@@ -1,6 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
-import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, classifyVideoRenderCallback } from './video-renderer.js';
+import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, classifyVideoRenderCallback, getRenderCallbackReplayDisposition } from './video-renderer.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -34,8 +34,9 @@ export default async function handler(req, res) {
       .select('*').eq('renderer_job_id', providerJobId).maybeSingle();
     if (jobError) throw jobError;
     if (!job) return res.status(404).json({ error: 'Render job not found' });
-    if (job.status === 'published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
-    if (job.status === 'publishing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
+    const replayDisposition = getRenderCallbackReplayDisposition(job.status);
+    if (replayDisposition === 'already_published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
+    if (replayDisposition === 'already_processing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
     if (req.body?.qc_passed !== true) {
       const failure = String(req.body?.error || 'Renderer reported a failed render/QC').slice(0, 500);
@@ -128,6 +129,9 @@ export default async function handler(req, res) {
       setHeader() {},
       end() {},
     };
+    if (callbackMode.mode !== 'public') {
+      throw new Error('Non-public render callback reached public publisher guard');
+    }
     await youtubePublishHandler({
       method: 'POST',
       headers: { authorization: 'Bearer ' + ownerToken },
