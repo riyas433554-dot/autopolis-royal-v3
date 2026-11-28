@@ -5,18 +5,26 @@ on:
       - "api/video-renderer.js"
       - "api/agent-run.js"
       - "api/video-render-callback.js"
+      - "api/tasks.js"
+      - "src/pages/Operations.tsx"
+      - "src/lib/api.ts"
       - "render-worker/**"
       - "tests/video-renderer.test.js"
       - "supabase/migrations/*video_render*"
+      - "supabase/migrations/*video_resolution*"
   push:
     branches: [main]
     paths:
       - "api/video-renderer.js"
       - "api/agent-run.js"
       - "api/video-render-callback.js"
+      - "api/tasks.js"
+      - "src/pages/Operations.tsx"
+      - "src/lib/api.ts"
       - "render-worker/**"
       - "tests/video-renderer.test.js"
       - "supabase/migrations/*video_render*"
+      - "supabase/migrations/*video_resolution*"
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -26,8 +34,8 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/video-render-storage.js
-      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js api/video-render-storage.js
+      - run: node --check api/agent-run.js && node --check api/video-renderer.js && node --check api/video-render-callback.js && node --check api/video-render-retry.js && node --check api/video-render-storage.js && node --check api/tasks.js
+      - run: npx eslint api/agent-run.js api/video-renderer.js api/video-render-callback.js api/video-render-retry.js api/video-render-storage.js api/tasks.js
       - run: node --test tests/video-renderer.test.js tests/video-render-storage.test.js
       - uses: actions/setup-python@v5
         with:
