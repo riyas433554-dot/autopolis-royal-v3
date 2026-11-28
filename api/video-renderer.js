@@ -107,6 +107,17 @@ export function isPrivateVideoTestTask(task) {
   return String(task?.description || '').trimStart().startsWith('[AUTOPOLIS PRIVATE QC TEST]');
 }
 
+export function classifyVideoRenderCallback({ task, provider }) {
+  const markedPrivate = isPrivateVideoTestTask(task);
+  const privateProvider = String(provider || '').trim() === 'private_test';
+  if (markedPrivate !== privateProvider) {
+    return { mode: 'reject', error: markedPrivate
+      ? 'Private QC task is missing private_test render-job provider isolation'
+      : 'private_test render job requires the exact private QC task marker' };
+  }
+  return { mode: markedPrivate ? 'private_test' : 'public' };
+}
+
 export function validateRendererQcReport(qcReport, maxUnnarratedSeconds = 3) {
   const report = qcReport && typeof qcReport === 'object' && !Array.isArray(qcReport) ? qcReport : null;
   if (!report) return 'QC report is required';
