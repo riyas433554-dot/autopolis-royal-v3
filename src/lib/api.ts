@@ -1,9 +1,14 @@
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- legacy call sites rely on contextual response typing
 export async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts?.headers || {}) } });
   const ct = res.headers.get('content-type') || '';
   if (!ct.includes('application/json')) throw new Error('City API unavailable (unexpected response). The database may be waking up — please retry.');
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.error || 'Request failed with status ' + res.status);
+  if (!res.ok) {
+    const message = typeof data === 'object' && data !== null && 'error' in data &&
+      typeof data.error === 'string' ? data.error : 'Request failed with status ' + res.status;
+    throw new Error(message);
+  }
   return data as T;
 }
 
