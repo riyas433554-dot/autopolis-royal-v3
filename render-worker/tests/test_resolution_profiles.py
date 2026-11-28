@@ -105,12 +105,12 @@ def test_ltx_provider_calls_public_space_with_target_dimensions(monkeypatch, tmp
     monkeypatch.setenv("LTX_ZEROGPU_CLIP_SECONDS", "10")
 
     result = main._render_with_ltx_zerogpu(
-        "Narration script", "Title", "video", "1080p", str(tmp_path),
+        "Narration script", "Title", "video", "720p", str(tmp_path),
     )
 
     predict = next(call for call in calls if call[0] == "predict")
-    assert predict[1][6] == 1088
-    assert predict[1][7] == 1920
+    assert predict[1][6] == 736
+    assert predict[1][7] == 1280
     assert predict[2]["api_name"] == "/generate_video"
     assert result.endswith("ltx-visuals.mp4")
 
@@ -170,7 +170,7 @@ def test_ltx_concat_manifest_separates_multiple_clips_with_real_newlines(monkeyp
     monkeypatch.setenv("LTX_ZEROGPU_CLIP_SECONDS", "10")
 
     main._render_with_ltx_zerogpu(
-        "Narration script", "Title", "video", "1080p", str(tmp_path),
+        "Narration script", "Title", "video", "720p", str(tmp_path),
     )
 
     assert len(manifests) == 1
@@ -178,3 +178,17 @@ def test_ltx_concat_manifest_separates_multiple_clips_with_real_newlines(monkeyp
     assert len(lines) == 2
     assert all(line.startswith("file ") for line in lines)
     assert "\\\\nfile " not in manifests[0]
+
+
+@pytest.mark.parametrize("resolution", ["1080p", "1440p"])
+def test_ltx_public_space_fails_fast_for_profiles_above_documented_native_limit(monkeypatch, tmp_path, resolution):
+    class ForbiddenClient:
+        def __init__(self, *args, **kwargs):
+            pytest.fail("LTX client must not be called for unsupported target dimensions")
+
+    monkeypatch.setattr(main, "Client", ForbiddenClient)
+    monkeypatch.setenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3")
+    with pytest.raises(RuntimeError, match="public Space is limited"):
+        main._render_with_ltx_zerogpu(
+            "Narration script", "Title", "video", resolution, str(tmp_path),
+        )
