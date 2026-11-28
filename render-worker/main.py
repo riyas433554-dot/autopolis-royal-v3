@@ -42,6 +42,17 @@ class RenderJobRequest(BaseModel):
             raise ValueError("value must not be blank")
         return value
 
+    @field_validator("resolution")
+    @classmethod
+    def require_enabled_high_resolution_provider(cls, value: str) -> str:
+        provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
+        ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+        if provider == "ltx_zerogpu" and not ltx_enabled:
+            raise ValueError("LTX ZeroGPU is disabled; enable it only after license and quota review")
+        if value != "source" and provider != "ai_video_studio" and not ltx_enabled:
+            raise ValueError("LTX ZeroGPU is disabled; high-resolution rendering is unavailable until license and quota review")
+        return value
+
 
 def init_db():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -431,12 +442,19 @@ def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) ->
         )
 
 
-def _select_render_source(configured_provider: str, resolution: str) -> str:
+def _select_render_source(configured_provider: str, resolution: str,
+                          ltx_enabled: bool | None = None) -> str:
     if configured_provider not in {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu"}:
         raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, or ltx_zerogpu")
+    if ltx_enabled is None:
+        ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    if configured_provider == "ltx_zerogpu" and not ltx_enabled:
+        raise RuntimeError("LTX ZeroGPU is disabled; enable it only after license and quota review")
     # The public Wan Space is fixed to sub-720p dimensions. Route high-resolution
-    # requests to LTX-2.3 unless an explicit AI Video Studio provider is selected.
+    # requests to LTX-2.3 only when its license/quota gate has been explicitly enabled.
     if resolution != "source" and configured_provider != "ai_video_studio":
+        if not ltx_enabled:
+            raise RuntimeError("LTX ZeroGPU is disabled; high-resolution rendering is unavailable until license and quota review")
         return "ltx_zerogpu"
     return configured_provider
 
