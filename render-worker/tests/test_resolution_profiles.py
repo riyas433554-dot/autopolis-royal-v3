@@ -53,3 +53,16 @@ def test_resolution_qc_accepts_profile_dimensions():
 
 def test_source_resolution_profile_does_not_force_upscale():
     assert main._resolution_dimensions("source", "video") is None
+
+@pytest.mark.parametrize("resolution", ["720p", "1080p", "1440p"])
+def test_high_resolution_routes_to_studio_provider(resolution):
+    assert main._select_render_source("hf_zerogpu", resolution) == "ai_video_studio"
+
+
+def test_source_profile_keeps_configured_provider():
+    assert main._select_render_source("hf_zerogpu", "source") == "hf_zerogpu"
+
+
+def test_studio_render_options_enable_upscaling_only_for_target_profiles():
+    assert main._studio_render_options("1080p")["upscaling"] is True
+    assert main._studio_render_options("source")["upscaling"] is False
