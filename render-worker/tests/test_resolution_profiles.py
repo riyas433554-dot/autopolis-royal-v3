@@ -265,6 +265,12 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
         def json(self):
             return self.payload
 
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
         def raise_for_status(self):
             return None
 
