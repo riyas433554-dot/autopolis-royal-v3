@@ -45,6 +45,15 @@ def test_resolution_qc_rejects_low_resolution_source():
         )
 
 
+
+def test_resolution_qc_rejects_wrong_aspect_ratio_even_when_dimensions_are_large_enough():
+    with pytest.raises(RuntimeError, match="aspect ratio"):
+        main._validate_resolution_qc(
+            {"width": 1920, "height": 1920},
+            resolution="1080p", deliverable_type="video",
+        )
+
+
 def test_resolution_qc_accepts_profile_dimensions():
     main._validate_resolution_qc(
         {"width": 1920, "height": 1080},
