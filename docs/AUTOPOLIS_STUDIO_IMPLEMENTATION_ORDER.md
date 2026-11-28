@@ -52,3 +52,8 @@ Status: active implementation sequence. Do not reorder, skip, or start later pha
 
 ## Phase gate
 Each phase must have: implementation, focused tests observed failing before the fix when using TDD, CI result, artifact/output verification, and a short evidence note. Do not start the next phase until the current phase's gate is green.
+
+
+## Evidence log
+- **Phase 1 QC gates — implemented; focused tests green.** Branch commit: `2c99ff71152d5894a4049b4000ccd63ca1e1ff2f`. Autopolis CI run `46113215844`: unit tests and render-worker tests passed; Build Verify run `46113215833` passed. Full Autopolis CI lint step failed on existing repo-wide lint issues (106 errors across pre-existing files); not caused by the render-worker Python change. No Render deploy or public video publish was performed.
+- **Phase 2 — next, not started yet.** Verified the current public HF ZeroGPU video Space is fixed to 832×480 landscape / 480×832 portrait / 640×640 square, so it cannot be advertised as native 1080p/1440p. High-resolution requests must route through a provider that can genuinely return the selected dimensions and fail QC otherwise.
