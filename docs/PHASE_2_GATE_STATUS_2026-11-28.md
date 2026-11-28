@@ -58,3 +58,12 @@ No Phase 3 work, production migration, main-branch change, or public media publi
 - The callback validates the QC report, then stores a successful private test as `ready` and returns without invoking YouTube publishing. Ordinary video tasks retain existing auto-publish behavior.
 - The marker is intentionally case-sensitive and explicit; do not add it to customer tasks. Use it only on a dedicated internal test task with non-confidential content.
 - This is implemented on the PR branch only. Do not submit the private test until this branch is deployed to the app callback service and the callback route is confirmed to use the private-test branch. No new test job has been submitted.
+
+
+## Latest branch verification — 2026-11-28
+
+- Added a regression test ensuring changing only the requested resolution (720p → 1080p) changes the renderer idempotency key. This prevents a renderer from reusing a previous-resolution job for the same task and script.
+- Commit: `ac0a5dabccb365f63c243baa217a207f8d71701d`.
+- CI at this exact head: Autopolis Build Verify run [46159904022](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904022) PASS; Autopolis CI [46159904036](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904036) PASS; Video render worker tests [46159904040](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904040) PASS.
+- Render service inventory read-only confirmed the worker remains on the implementation branch with auto-deploy off, and the app service remains on `main`. No deploy or private job was triggered. Callback isolation is therefore branch-tested but not live-verified.
+- Phase 2 remains OPEN until a deployed, authenticated private 720p render produces an MP4 that is downloaded and inspected for actual dimensions, aspect ratio, codecs, duration, narration coverage, and visual playback. 1080p/1440p are not certified.
