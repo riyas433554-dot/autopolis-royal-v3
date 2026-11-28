@@ -32,6 +32,7 @@ class RenderJobRequest(BaseModel):
     deliverable_type: Literal["video", "reel", "anime", "movie"]
     script: str = Field(min_length=1, max_length=120000)
     profile: str = Field(default="cinematic", max_length=40)
+    resolution: Literal["source", "720p", "1080p", "1440p"] = "source"
     callback_url: HttpUrl
 
     @field_validator("title", "script")
@@ -399,6 +400,58 @@ def _download_studio_video(project_id: str, target: str):
         raise RuntimeError("AI Video Studio returned an empty MP4")
 
 
+def _resolution_dimensions(resolution: str, deliverable_type: str) -> tuple[int, int] | None:
+    """Return minimum output dimensions; 'source' preserves provider dimensions."""
+    if resolution == "source":
+        return None
+    landscape = {
+        "720p": (1280, 720),
+        "1080p": (1920, 1080),
+        "1440p": (2560, 1440),
+    }
+    if resolution not in landscape:
+        raise ValueError(f"Unsupported resolution profile: {resolution}")
+    width, height = landscape[resolution]
+    if deliverable_type == "reel":
+        return height, width
+    return width, height
+
+
+def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) -> None:
+    target = _resolution_dimensions(resolution, deliverable_type)
+    if target is None:
+        return
+    width = int(qc.get("width") or 0)
+    height = int(qc.get("height") or 0)
+    target_width, target_height = target
+    if width < target_width or height < target_height:
+        raise RuntimeError(
+            "QC failed: requested resolution profile "
+            f"{resolution} requires at least {target_width}x{target_height}; got {width}x{height}"
+        )
+
+
+def _select_render_source(configured_provider: str, resolution: str) -> str:
+    if configured_provider not in {"hf_zerogpu", "ai_video_studio"}:
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+    # The public HF Space is fixed to 832x480 landscape, 480x832 portrait,
+    # and 640x640 square. Route high-resolution requests to the Studio provider.
+    if resolution != "source":
+        return "ai_video_studio"
+    return configured_provider
+
+
+def _studio_render_options(resolution: str) -> dict:
+    """Request provider-side model upscaling for a named output profile."""
+    return {
+        "subtitles": False,
+        "music": False,
+        "interpolation": True,
+        "upscaling": resolution != "source",
+        "consistency": "schnell",
+    }
+
+
 def _validate_narration_coverage(video_duration: float, voice_duration: float) -> None:
     """Fail closed when narration is missing or ends materially before the video."""
     if video_duration <= 0:
@@ -566,12 +619,8 @@ def render_and_callback(job_id: str):
     payload = json.loads(job["payload"])
     script = payload["script"]
     provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
-    if provider == "hf_zerogpu":
-        render_source = "hf_zerogpu"
-    elif provider == "ai_video_studio":
-        render_source = "ai_video_studio"
-    else:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu or ai_video_studio")
+    resolution = payload.get("resolution", "source")
+    render_source = _select_render_source(provider, resolution)
     if render_source == "ai_video_studio":
         word_count = len(script.split())
         is_reel = payload.get("deliverable_type") == "reel"
@@ -589,8 +638,7 @@ def render_and_callback(job_id: str):
             raise RuntimeError("AI Video Studio did not return project id")
         _studio_request("POST", "/generation/start", json={
             "project_id": project_id,
-            "render_opts": {"subtitles": False, "music": False, "interpolation": True,
-                            "upscaling": False, "consistency": "schnell"},
+            "render_opts": _studio_render_options(resolution),
         })
         deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
         while time.time() < deadline:
@@ -613,6 +661,7 @@ def render_and_callback(job_id: str):
         else:
             _download_studio_video(project_id, source)
         source_qc = _probe(source)
+        _validate_resolution_qc(source_qc, resolution, payload["deliverable_type"])
         voice_provider = "VoiceStudio"
         try:
             _generate_voice_studio_audio(script, voice_audio)
@@ -636,6 +685,8 @@ def render_and_callback(job_id: str):
         _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
         qc = _probe(final)
         _validate_narration_coverage(qc["duration_seconds"], voice_duration)
+        _validate_resolution_qc(qc, resolution, payload["deliverable_type"])
+        qc["resolution_profile"] = resolution
         qc["size_bytes"] = os.path.getsize(final)
         qc["captions_burned"] = bool(subtitle_path)
         if caption_error:
