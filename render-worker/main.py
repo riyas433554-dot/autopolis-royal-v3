@@ -724,7 +724,7 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
     concat_path = os.path.join(temp, "ltx-clips.txt")
     with open(concat_path, "w", encoding="utf-8") as listing:
         for path in clip_paths:
-            listing.write("file " + json.dumps(path) + "\\n")
+            listing.write("file " + json.dumps(path) + "\n")
     source = os.path.join(temp, "ltx-visuals.mp4")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
