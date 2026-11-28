@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto';
 
 const VIDEO_TYPES = new Set(['video', 'reel', 'anime', 'movie']);
+const VIDEO_RESOLUTIONS = new Set(['source', '720p', '1080p', '1440p']);
+
+export function normalizeVideoResolution(deliverableType, value = 'source') {
+  const type = String(deliverableType || '').trim().toLowerCase();
+  if (!VIDEO_TYPES.has(type)) return 'source';
+  const resolution = String(value || 'source').trim().toLowerCase();
+  if (!VIDEO_RESOLUTIONS.has(resolution)) {
+    throw new Error('Unsupported video resolution profile: ' + resolution);
+  }
+  return resolution;
+}
 
 export function extractVideoNarration(result) {
   const text = typeof result === 'string' ? result.trim() : '';
@@ -100,11 +111,9 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile, re
   const script = extractVideoNarration(result);
   if (!title) throw new Error('Video title is required');
   if (!script) throw new Error('Video script is required');
-  const requestedResolution = String(resolution || task?.video_resolution || task?.resolution || 'source').trim().toLowerCase();
-  const supportedResolutions = new Set(['source', '720p', '1080p', '1440p']);
-  if (!supportedResolutions.has(requestedResolution)) {
-    throw new Error('Unsupported video resolution profile: ' + requestedResolution);
-  }
+  const requestedResolution = normalizeVideoResolution(
+    type, resolution || task?.video_resolution || task?.resolution || 'source',
+  );
   const payload = {
     task_id: taskId,
     title: title.slice(0, 100),
