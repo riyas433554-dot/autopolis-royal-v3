@@ -107,6 +107,12 @@ export function isPrivateVideoTestTask(task) {
   return String(task?.description || '').trimStart().startsWith('[AUTOPOLIS PRIVATE QC TEST]');
 }
 
+export function getRenderCallbackReplayDisposition(status) {
+  if (status === 'published') return 'already_published';
+  if (status === 'publishing') return 'already_processing';
+  return 'process';
+}
+
 export function classifyVideoRenderCallback({ task, provider }) {
   const markedPrivate = isPrivateVideoTestTask(task);
   const privateProvider = String(provider || '').trim() === 'private_test';
