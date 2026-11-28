@@ -56,7 +56,7 @@ def test_source_resolution_profile_does_not_force_upscale():
 
 @pytest.mark.parametrize("resolution", ["720p", "1080p", "1440p"])
 def test_high_resolution_routes_to_studio_provider(resolution):
-    assert main._select_render_source("hf_zerogpu", resolution) == "ltx_zerogpu"
+    assert main._select_render_source("hf_zerogpu", resolution, ltx_enabled=True) == "ltx_zerogpu"
 
 
 def test_source_profile_keeps_configured_provider():
@@ -120,3 +120,12 @@ def test_high_resolution_qc_rejects_static_video_tail_when_visuals_are_short():
 
 def test_high_resolution_qc_accepts_visuals_covering_narration():
     main._validate_visual_coverage(video_duration=43.0, voice_duration=45.0)
+
+def test_high_resolution_ltx_route_is_disabled_until_explicitly_enabled():
+    with pytest.raises(RuntimeError, match="LTX ZeroGPU is disabled"):
+        main._select_render_source("hf_zerogpu", "1080p", ltx_enabled=False)
+
+
+def test_explicit_ltx_provider_requires_enable_flag():
+    with pytest.raises(RuntimeError, match="LTX ZeroGPU is disabled"):
+        main._select_render_source("ltx_zerogpu", "source", ltx_enabled=False)
