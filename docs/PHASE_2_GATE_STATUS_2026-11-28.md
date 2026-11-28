@@ -41,3 +41,13 @@ No Phase 3 work, production migration, main-branch change, or public media publi
 - LTX ZeroGPU remains disabled by default pending license/quota review. No 720p MP4 was produced and inspected; 1080p/1440p remain intentionally fail-closed. Supabase migration remains branch-only/not applied to production.
 
 **Gate status remains OPEN.** Do not mark Phase 2 complete or start Phase 3 until a real authenticated 720p job finishes and its downloaded MP4 is checked with ffprobe and visual playback/QC. Also resolve the commercial license/quota and provider connectivity gates. This update records observed evidence only; it does not claim a render test passed.
+
+## Fresh audit and callback QC regression — 2026-11-28
+
+- Supabase audit found an existing completed/published task #31 (not a newly created private test): its saved QC report records 960x540, 45.00 seconds, narration 27.83 seconds, H.264/AAC, and `captions_burned=false`. The video was already marked `published`; do not rerun or republish this task.
+- The 17.17-second narration gap violates the worker's configured 3-second coverage tolerance. The callback previously trusted `qc_passed=true` and did not independently validate narration duration, dimensions, or codec metadata. The exact reason the older worker reported a false pass is not proven; callback defense-in-depth now rejects inconsistent reports before the job can be marked ready or published.
+- Regression test was committed first: `04b3b7513c730a8105afef87c1a5c435fa42ef12`; RED was observed in Video render worker run `46156587852` (missing validator export).
+- Fix commit: `f5e354b4d8509409b71dbfc46501528ffd99ecdb`. Added callback-side QC validation for positive duration/narration/dimensions, both codecs, narration gap (default max 3 seconds), and named-profile minimum dimensions.
+- Verification at fix head: Autopolis CI `46156631865` PASS; Build Verify `46156631892` PASS; dedicated Video render worker tests `46156631886` PASS. These are branch CI results only; no production callback deployment was performed.
+- Private test remains outstanding. Do not dispatch a task with the current callback until the test is isolated from public YouTube publishing; the callback's existing production behavior auto-publishes when a YouTube account is connected.
+- Phase 2 remains OPEN: no newly generated private 720p artifact has been downloaded and visually/technically inspected. 1080p/1440p remain unverified.
