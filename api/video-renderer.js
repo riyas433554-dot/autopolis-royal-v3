@@ -103,6 +103,10 @@ export function validateVideoDuration(taskDescription, qcReport) {
 }
 
 
+export function isPrivateVideoTestTask(task) {
+  return String(task?.description || '').trimStart().startsWith('[AUTOPOLIS PRIVATE QC TEST]');
+}
+
 export function validateRendererQcReport(qcReport, maxUnnarratedSeconds = 3) {
   const report = qcReport && typeof qcReport === 'object' && !Array.isArray(qcReport) ? qcReport : null;
   if (!report) return 'QC report is required';
@@ -160,6 +164,7 @@ export function buildVideoRenderPayload({ task, result, callbackUrl, profile, re
   );
   const payload = {
     task_id: taskId,
+    private_test: isPrivateVideoTestTask(task),
     title: title.slice(0, 100),
     description: extractYoutubeDescription(result, task?.description),
     deliverable_type: type,

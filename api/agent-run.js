@@ -4,7 +4,7 @@ import supabase from './db-client.js';
 import { buildCompanyOutput } from './company-output.js';
 import { getLlmConfig, callChatCompletion, responseText } from './llm-runtime.js';
 import { executeAgentTool } from './agent-tools.js';
-import { dispatchVideoRender } from './video-renderer.js';
+import { dispatchVideoRender, isPrivateVideoTestTask } from './video-renderer.js';
 
 const ECC_REPO = 'affaan-m/ECC';
 const MAX_OUTPUT_CHARS = 50000;
@@ -340,6 +340,7 @@ export default async function handler(req, res) {
 
     let videoRender = null;
     if (['video', 'reel', 'anime', 'movie'].includes(String(task.deliverable_type || '').toLowerCase())) {
+      const privateVideoTest = isPrivateVideoTestTask(task);
       const publicBase = String(process.env.AUTOPOLIS_PUBLIC_URL || '').trim();
       if (!process.env.VIDEO_RENDERER_URL || !process.env.VIDEO_RENDERER_TOKEN || !publicBase) {
         videoRender = { status: 'not_configured', message: 'External render host requires VIDEO_RENDERER_URL, VIDEO_RENDERER_TOKEN, and AUTOPOLIS_PUBLIC_URL.' };
@@ -354,7 +355,7 @@ export default async function handler(req, res) {
           try {
             if (existingRender) {
               const { data: resetRender, error: resetRenderError } = await supabase.from('video_render_jobs').update({
-                provider: 'external',
+                provider: privateVideoTest ? 'private_test' : 'external',
                 status: 'submitting',
                 renderer_job_id: null,
                 video_url: null,
@@ -372,7 +373,7 @@ export default async function handler(req, res) {
               renderRow = resetRender;
             } else {
               const { data: insertedRender, error: insertRenderError } = await supabase.from('video_render_jobs')
-                .insert({ task_id: taskId, provider: 'external', status: 'submitting' })
+                .insert({ task_id: taskId, provider: privateVideoTest ? 'private_test' : 'external', status: 'submitting' })
                 .select('id').single();
               if (insertRenderError) throw insertRenderError;
               renderRow = insertedRender;
@@ -381,7 +382,7 @@ export default async function handler(req, res) {
             const dispatched = await dispatchVideoRender({ task, result, callbackUrl });
             const { error: renderUpdateError } = await supabase.from('video_render_jobs').update({
               renderer_job_id: dispatched.job_id,
-              provider: dispatched.provider,
+              provider: privateVideoTest ? 'private_test' : dispatched.provider,
               status: 'submitted',
               submitted_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),

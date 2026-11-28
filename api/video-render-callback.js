@@ -76,6 +76,16 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, status: 'failed', error: qcError });
     }
 
+    if (job.provider === 'private_test') {
+      const report = { ...(req.body?.qc_report || {}), private_test: true };
+      const { error: privateReadyError } = await supabase.from('video_render_jobs').update({
+        status: 'ready', video_url: videoUrl, qc_passed: true, qc_report: report,
+        rendered_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
+      }).eq('id', job.id);
+      if (privateReadyError) throw privateReadyError;
+      return res.status(200).json({ ok: true, status: 'ready', private_test: true, video_url: videoUrl });
+    }
+
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
     if (accountError) throw accountError;

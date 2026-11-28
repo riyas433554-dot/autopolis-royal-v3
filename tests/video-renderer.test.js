@@ -13,6 +13,7 @@ test('builds a video render job from a completed task and script', () => {
   assert.equal(payload.deliverable_type, 'reel');
   assert.equal(payload.script, 'Scene 1: product reveal');
   assert.equal(payload.callback_url, 'https://autopolis.example/api/video-render-callback');
+  assert.equal(payload.private_test, false);
 });
 
 test('rejects non-video deliverables and empty scripts', () => {

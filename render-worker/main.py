@@ -34,6 +34,7 @@ class RenderJobRequest(BaseModel):
     profile: str = Field(default="cinematic", max_length=40)
     resolution: Literal["source", "720p", "1080p", "1440p"] = "source"
     callback_url: HttpUrl
+    private_test: bool = False
 
     @field_validator("title", "script")
     @classmethod
@@ -1025,6 +1026,7 @@ def render_and_callback(job_id: str):
         qc["voice_provider"] = voice_provider
         qc["voice_model"] = os.getenv("VOICE_STUDIO_MODEL", "phone-selected" if voice_provider == "VoiceStudio" and os.getenv("VOICE_STUDIO_TTS_MODE", "").lower() == "phone" else ("kokoro:" + os.getenv("KOKORO_HF_VOICE", "af_heart") if voice_provider.startswith("Kokoro") else "unconfigured"))
         qc["voice_duration_seconds"] = round(voice_duration, 2)
+        qc["private_test"] = payload.get("private_test") is True
         if qc["size_bytes"] > MAX_VIDEO_BYTES:
             raise RuntimeError("QC failed: final video exceeds 100 MB")
         media_url = _upload_to_autopolis_storage(final, int(payload["task_id"]), job_id)
