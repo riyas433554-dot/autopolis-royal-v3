@@ -49,8 +49,12 @@ class RenderJobRequest(BaseModel):
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
         if provider == "ltx_zerogpu" and not ltx_enabled:
             raise ValueError("LTX ZeroGPU is disabled; enable it only after license and quota review")
-        if value != "source" and provider != "ai_video_studio" and not ltx_enabled:
+        if provider == "agnes_video" and value in {"1080p", "1440p"}:
+            raise ValueError("Agnes Video Flash only supports 720p; 1080p/1440p require a paid or separately verified provider")
+        if value != "source" and provider not in {"ai_video_studio", "agnes_video"} and not ltx_enabled:
             raise ValueError("LTX ZeroGPU is disabled; high-resolution rendering is unavailable until license and quota review")
+        if provider == "agnes_video" and not os.getenv("AGNES_API_KEY", "").strip():
+            raise ValueError("AGNES_API_KEY is required for the Agnes Video provider")
         return value
 
 
@@ -456,12 +460,18 @@ def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) ->
 
 def _select_render_source(configured_provider: str, resolution: str,
                           ltx_enabled: bool | None = None) -> str:
-    if configured_provider not in {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu"}:
-        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, or ltx_zerogpu")
+    allowed = {"hf_zerogpu", "ai_video_studio", "ltx_zerogpu", "agnes_video"}
+    if configured_provider not in allowed:
+        raise RuntimeError("VIDEO_RENDER_PROVIDER must be hf_zerogpu, ai_video_studio, ltx_zerogpu, or agnes_video")
     if ltx_enabled is None:
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
     if configured_provider == "ltx_zerogpu" and not ltx_enabled:
         raise RuntimeError("LTX ZeroGPU is disabled; enable it only after license and quota review")
+    if configured_provider == "agnes_video" and resolution in {"1080p", "1440p"}:
+        raise RuntimeError("Agnes Video Flash only supports 720p; 1080p/1440p require a paid or separately verified provider")
+    # Agnes Video Flash provides an explicit 720P profile. It does not use the LTX gate.
+    if configured_provider == "agnes_video":
+        return "agnes_video"
     # The public Wan Space is fixed to sub-720p dimensions. Route high-resolution
     # requests to LTX-2.3 only when its license/quota gate has been explicitly enabled.
     if resolution != "source" and configured_provider != "ai_video_studio":
@@ -592,6 +602,132 @@ def _scene_prompts(script: str, limit: int = 42) -> list[str]:
     if current:
         chunks.append(" ".join(current))
     return chunks
+
+
+_AGNES_LAST_SUBMIT = 0.0
+
+
+def _agnes_generate_clip(prompt: str, target: str, deliverable_type: str) -> str:
+    """Generate and download one explicit 720P clip from Agnes Video 2.5 Flash."""
+    api_key = os.getenv("AGNES_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("AGNES_API_KEY is required for Agnes Video Flash")
+    base = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1").rstrip("/")
+    if not base.endswith("/v1"):
+        base += "/v1"
+    model = "agnes-video-2.5-flash"
+    seconds = str(int(os.getenv("AGNES_VIDEO_SECONDS", "12")))
+    if seconds not in {str(value) for value in range(4, 13)}:
+        raise RuntimeError("AGNES_VIDEO_SECONDS must be between 4 and 12")
+    ratio = "9:16" if deliverable_type == "reel" else "16:9"
+    interval = max(0, int(os.getenv("AGNES_VIDEO_MIN_INTERVAL_SECONDS", "60")))
+    global _AGNES_LAST_SUBMIT
+    wait = interval - (time.monotonic() - _AGNES_LAST_SUBMIT)
+    if _AGNES_LAST_SUBMIT and wait > 0:
+        time.sleep(wait)
+    headers = {"authorization": "Bearer " + api_key, "content-type": "application/json"}
+    response = requests.post(base + "/videos", headers=headers, json={
+        "model": model, "prompt": prompt, "mode": "text", "seconds": seconds,
+        "size": "720P", "aspect_ratio": ratio, "n": 1,
+    }, timeout=(20, 180))
+    _AGNES_LAST_SUBMIT = time.monotonic()
+    if not response.ok:
+        raise RuntimeError(f"Agnes Video create failed with HTTP {response.status_code}: {response.text[:300]}")
+    try:
+        created = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Agnes Video create returned invalid JSON") from exc
+    video_id = str(created.get("video_id") or "").strip()
+    if not video_id:
+        raise RuntimeError("Agnes Video create response did not include video_id")
+    result_url = os.getenv("AGNES_VIDEO_RESULT_URL", "").strip()
+    if not result_url:
+        result_url = base[:-3] + "/agnesapi"
+    deadline = time.time() + int(os.getenv("AGNES_VIDEO_TIMEOUT_SECONDS", "1800"))
+    while time.time() < deadline:
+        poll = requests.get(result_url, headers=headers, params={
+            "video_id": video_id, "model_name": model,
+        }, timeout=(20, 120))
+        if not poll.ok:
+            raise RuntimeError(f"Agnes Video poll failed with HTTP {poll.status_code}: {poll.text[:300]}")
+        try:
+            state = poll.json()
+        except ValueError as exc:
+            raise RuntimeError("Agnes Video poll returned invalid JSON") from exc
+        status = str(state.get("status") or "").strip().lower()
+        if status in {"completed", "success", "succeeded", "done"}:
+            media_url = str(state.get("url") or state.get("video_url") or "").strip()
+            break
+        if status in {"failed", "error", "cancelled"}:
+            raise RuntimeError("Agnes Video generation failed: " + str(state.get("error") or state.get("message") or status)[:300])
+        time.sleep(max(1, int(os.getenv("AGNES_VIDEO_POLL_INTERVAL_SECONDS", "10"))))
+    else:
+        raise RuntimeError("Agnes Video generation exceeded configured timeout")
+    if not media_url.startswith("https://"):
+        raise RuntimeError("Agnes Video completed without a valid HTTPS MP4 URL")
+    with requests.get(media_url, stream=True, timeout=(20, 600)) as download:
+        if not download.ok:
+            raise RuntimeError(f"Agnes Video download failed with HTTP {download.status_code}")
+        total = 0
+        with open(target, "wb") as output:
+            for chunk in download.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_SOURCE_BYTES:
+                    raise RuntimeError("Agnes Video clip exceeded 1 GB source limit")
+                output.write(chunk)
+    if not os.path.isfile(target) or not os.path.getsize(target):
+        raise RuntimeError("Agnes Video returned an empty clip")
+    return target
+
+
+def _render_with_agnes_video(script: str, title: str, deliverable_type: str, temp: str) -> str:
+    """Generate 720P scene clips; provider rate limits are respected and long scripts fail closed."""
+    prompts = _scene_prompts(script, limit=int(os.getenv("AGNES_VIDEO_SCENE_WORDS", "30")))
+    if not prompts:
+        raise RuntimeError("No script scenes available for Agnes Video")
+    max_scenes = int(os.getenv("AGNES_VIDEO_MAX_SCENES", "6" if deliverable_type == "reel" else "12"))
+    if len(prompts) > max_scenes:
+        raise RuntimeError(
+            f"Agnes Video script needs {len(prompts)} scenes but configured maximum is {max_scenes}; "
+            "shorten the script or raise AGNES_VIDEO_MAX_SCENES after quota review"
+        )
+    target_width, target_height = (720, 1280) if deliverable_type == "reel" else (1280, 720)
+    normalized = []
+    for index, scene in enumerate(prompts):
+        prompt = (
+            f"Visual scene for the video titled {title}. {scene}. "
+            "Cinematic natural motion, consistent subject, deliberate camera movement, "
+            "clean frame, no text, subtitles, or logos."
+        )
+        clip_path = os.path.join(temp, f"agnes-clip-{index:03d}.mp4")
+        _agnes_generate_clip(prompt, clip_path, deliverable_type)
+        clip_qc = _probe(clip_path)
+        if clip_qc["width"] < target_width or clip_qc["height"] < target_height:
+            raise RuntimeError(
+                f"Agnes Video Flash returned {clip_qc['width']}x{clip_qc['height']}; "
+                f"720P profile requires at least {target_width}x{target_height}"
+            )
+        normalized_path = os.path.join(temp, f"agnes-normalized-{index:03d}.mp4")
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", clip_path,
+            "-vf", f"scale={target_width}:{target_height}:force_original_aspect_ratio=increase,crop={target_width}:{target_height},setsar=1,fps=24",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", normalized_path,
+        ], capture_output=True, text=True, timeout=900, check=True)
+        normalized.append(normalized_path)
+    concat_path = os.path.join(temp, "agnes-clips.txt")
+    with open(concat_path, "w", encoding="utf-8") as listing:
+        for path in normalized:
+            listing.write("file " + json.dumps(path) + "\n")
+    source = os.path.join(temp, "agnes-visuals.mp4")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
+        "-c", "copy", source,
+    ], capture_output=True, text=True, timeout=1800, check=True)
+    return source
 
 
 def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp: str) -> str:
@@ -809,6 +945,8 @@ def render_and_callback(job_id: str):
         final = os.path.join(temp, "autopolis-final.mp4")
         if render_source == "hf_zerogpu":
             source = _render_with_hf_zerogpu(script, payload["title"], payload["deliverable_type"], temp)
+        elif render_source == "agnes_video":
+            source = _render_with_agnes_video(script, payload["title"], payload["deliverable_type"], temp)
         elif render_source == "ltx_zerogpu":
             source = _render_with_ltx_zerogpu(
                 script, payload["title"], payload["deliverable_type"], resolution, temp,
