@@ -290,6 +290,7 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
         return FakeResponse(content=b"mp4-bytes")
 
     monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.setenv("AGNES_VIDEO_ENABLED", "true")
     monkeypatch.setenv("AGNES_VIDEO_MIN_INTERVAL_SECONDS", "0")
     monkeypatch.setattr(main.requests, "post", fake_post)
     monkeypatch.setattr(main.requests, "get", fake_get)
