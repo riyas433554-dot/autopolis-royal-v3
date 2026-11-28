@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -196,4 +196,34 @@ test('normalizes resolution only for video deliverables', () => {
   assert.equal(normalizeVideoResolution('reel', '1440p'), '1440p');
   assert.equal(normalizeVideoResolution('report', '1440p'), 'source');
   assert.throws(() => normalizeVideoResolution('video', '4k'), /Unsupported video resolution/);
+});
+
+
+test('renderer callback QC rejects a video whose narration ends materially early', () => {
+  const report = {
+    duration_seconds: 45,
+    voice_duration_seconds: 27.83,
+    width: 960,
+    height: 540,
+    video_codec: 'h264',
+    audio_codec: 'aac',
+    resolution_profile: 'source',
+  };
+  assert.match(validateRendererQcReport(report), /narration coverage/);
+});
+
+test('renderer callback QC requires complete stream and duration metadata', () => {
+  assert.match(validateRendererQcReport({ duration_seconds: 45 }), /QC report/);
+});
+
+test('renderer callback QC accepts complete narration and stream metadata', () => {
+  assert.equal(validateRendererQcReport({
+    duration_seconds: 45,
+    voice_duration_seconds: 43,
+    width: 1920,
+    height: 1080,
+    video_codec: 'h264',
+    audio_codec: 'aac',
+    resolution_profile: 'source',
+  }), null);
 });
