@@ -297,3 +297,24 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
     assert request["size"] == "720P"
     assert request["aspect_ratio"] == "9:16"
     assert request["seconds"] == "12"
+
+
+def test_probe_can_validate_video_only_render_source_but_final_requires_audio(monkeypatch, tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    payload = {
+        "streams": [{"codec_type": "video", "width": 1280, "height": 720, "codec_name": "h264"}],
+        "format": {"duration": "12.0"},
+    }
+    monkeypatch.setattr(
+        main.subprocess, "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(payload)),
+    )
+
+    source_qc = main._probe(str(tmp_path / "video-only.mp4"), require_audio=False)
+    assert source_qc["width"] == 1280
+    assert source_qc["audio_codec"] is None
+
+    with pytest.raises(RuntimeError, match="video/audio streams"):
+        main._probe(str(tmp_path / "final-without-audio.mp4"))
