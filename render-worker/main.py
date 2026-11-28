@@ -440,6 +440,18 @@ def _validate_resolution_qc(qc: dict, resolution: str, deliverable_type: str) ->
             "QC failed: requested resolution profile "
             f"{resolution} requires at least {target_width}x{target_height}; got {width}x{height}"
         )
+    expected_ratio = target_width / target_height
+    actual_ratio = width / height if height else 0.0
+    ratio_error = abs(actual_ratio - expected_ratio) / expected_ratio if expected_ratio else 1.0
+    max_ratio_error = float(os.getenv("VIDEO_QC_MAX_ASPECT_RATIO_ERROR", "0.02"))
+    if max_ratio_error < 0:
+        raise RuntimeError("VIDEO_QC_MAX_ASPECT_RATIO_ERROR must be non-negative")
+    if ratio_error > max_ratio_error:
+        raise RuntimeError(
+            "QC failed: requested resolution profile "
+            f"{resolution} aspect ratio must be {expected_ratio:.4f}; got {actual_ratio:.4f} "
+            f"(relative error {ratio_error:.2%}, allowed {max_ratio_error:.2%})"
+        )
 
 
 def _select_render_source(configured_provider: str, resolution: str,
