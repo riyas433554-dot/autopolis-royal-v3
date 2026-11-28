@@ -32,7 +32,7 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
       };
       await api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) });
       await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: 'New task created: ' + form.title, building_slug: payload.building_slug, detail: (company ? company.name + ' · ' : '') + 'Assigned to ' + (form.agent_name || 'Unassigned') + ' · ' + form.deliverable_type + ' · priority ' + form.priority }) });
-      setForm({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report' });
+      setForm({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report', video_resolution: 'source' });
       load();
     } catch (e2: any) { setNote('Could not create task: ' + e2.message); }
     finally { setSaving(false); }
