@@ -671,6 +671,17 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
     if target is None:
         target = (1024, 1536) if deliverable_type == "reel" else (1536, 1024)
     target_width, target_height = target
+    # The public Lightricks ZeroGPU Space currently documents its high tier as
+    # 1536x1024 (landscape) / 1024x1536 (portrait). Fail fast rather than
+    # requesting unsupported 1080p/1440p dimensions and wasting GPU quota.
+    max_width, max_height = (1536, 1024) if deliverable_type != "reel" else (1024, 1536)
+    if target_width > max_width or target_height > max_height:
+        raise RuntimeError(
+            "LTX ZeroGPU public Space is limited to 1536x1024 landscape or "
+            "1024x1536 portrait; requested profile "
+            f"{resolution} needs {target_width}x{target_height}. "
+            "Use a provider with verified native target-resolution output."
+        )
     request_width, request_height = _ltx_request_dimensions(target)
     max_clip_seconds = float(os.getenv("LTX_ZEROGPU_MAX_CLIP_SECONDS", "10"))
     if not 1 <= max_clip_seconds <= 10:
