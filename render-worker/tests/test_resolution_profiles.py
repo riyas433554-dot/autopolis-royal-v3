@@ -322,5 +322,5 @@ def test_probe_can_validate_video_only_render_source_but_final_requires_audio(mo
     assert source_qc["width"] == 1280
     assert source_qc["audio_codec"] is None
 
-    with pytest.raises(RuntimeError, match="video/audio streams"):
+    with pytest.raises(RuntimeError, match="video and audio streams"):
         main._probe(str(tmp_path / "final-without-audio.mp4"))
