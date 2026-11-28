@@ -30,3 +30,14 @@ Not yet completed:
 5. Do not apply the Supabase migration to production until branch/deploy and artifact gate pass.
 
 No Phase 3 work, production migration, main-branch change, or public media publish was performed.
+
+
+## Latest verification update — 2026-11-28 (after Render dashboard branch correction)
+
+- Existing Render service read-only check: branch is now `feat/autopolis-studio-implementation-order`; auto-deploy remains off; service plan is **Free**; service URL is https://autopolis-video-worker.onrender.com.
+- Live deployment observed: `dep-dc57uil6e07s739p5srg`, commit `be387ed1a2cd51eae9d1f99f8732091b2670b97e`. Startup logs confirm the FastAPI process is live on port 8080. The deployment is the worker bridge/API, not evidence that an AI GPU host or VoiceStudio is attached.
+- Render logs inspected for the deployment window: startup/health traffic only; no authenticated `POST /v1/jobs` or completed render artifact was observed. Public API inspection from this execution environment was unavailable (DNS resolution failure), and the Render connector does not expose the existing secret values or an arbitrary authenticated HTTP request action. Existing tokens were not replaced or guessed.
+- The worker code defaults `AI_VIDEO_STUDIO_URL` to localhost:7860 and `VOICE_STUDIO_URL` to localhost:3900; those dependencies must actually be reachable from the worker, or an explicitly configured provider must be available. No successful integration check for either dependency was observed.
+- LTX ZeroGPU remains disabled by default pending license/quota review. No 720p MP4 was produced and inspected; 1080p/1440p remain intentionally fail-closed. Supabase migration remains branch-only/not applied to production.
+
+**Gate status remains OPEN.** Do not mark Phase 2 complete or start Phase 3 until a real authenticated 720p job finishes and its downloaded MP4 is checked with ffprobe and visual playback/QC. Also resolve the commercial license/quota and provider connectivity gates. This update records observed evidence only; it does not claim a render test passed.
