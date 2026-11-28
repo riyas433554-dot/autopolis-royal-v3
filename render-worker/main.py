@@ -372,7 +372,8 @@ def _probe_audio_duration(path: str) -> float:
     return duration
 
 
-def _probe(path: str) -> dict:
+def _probe(path: str, require_audio: bool = True) -> dict:
+    """Probe a video artifact; intermediate visual sources may legitimately be silent."""
     proc = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path],
         capture_output=True, text=True, timeout=60, check=True,
@@ -382,7 +383,7 @@ def _probe(path: str) -> dict:
     duration = float(data.get("format", {}).get("duration") or 0)
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
-    if not video or not audio or duration <= 0:
+    if not video or (require_audio and not audio) or duration <= 0:
         raise RuntimeError("QC failed: MP4 must contain playable video and audio streams and positive duration")
     width = int(video.get("width") or 0)
     height = int(video.get("height") or 0)
@@ -393,9 +394,8 @@ def _probe(path: str) -> dict:
         "width": width,
         "height": height,
         "video_codec": video.get("codec_name"),
-        "audio_codec": audio.get("codec_name"),
+        "audio_codec": audio.get("codec_name") if audio else None,
     }
-
 
 def _download_studio_video(project_id: str, target: str):
     url = f"{AI_STUDIO_URL}/projects/{quote(project_id, safe='')}/download"
@@ -953,7 +953,7 @@ def render_and_callback(job_id: str):
             )
         else:
             _download_studio_video(project_id, source)
-        source_qc = _probe(source)
+        source_qc = _probe(source, require_audio=False)
         _validate_resolution_qc(source_qc, resolution, payload["deliverable_type"])
         voice_provider = "VoiceStudio"
         try:
