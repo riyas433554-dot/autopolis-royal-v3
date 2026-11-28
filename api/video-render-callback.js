@@ -34,7 +34,7 @@ export default async function handler(req, res) {
       .select('*').eq('renderer_job_id', providerJobId).maybeSingle();
     if (jobError) throw jobError;
     if (!job) return res.status(404).json({ error: 'Render job not found' });
-    const replayDisposition = getRenderCallbackReplayDisposition(job.status);
+    const replayDisposition = getRenderCallbackReplayDisposition(job.status, job.provider);
     if (replayDisposition === 'already_published') return res.status(200).json({ ok: true, already_published: true, video_url: job.provider_url });
     if (replayDisposition === 'already_processing') return res.status(202).json({ ok: true, status: 'publishing', message: 'YouTube upload is already in progress' });
 
