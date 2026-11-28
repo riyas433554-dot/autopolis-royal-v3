@@ -75,3 +75,16 @@ No Phase 3 work, production migration, main-branch change, or public media publi
 - Render logs show Uvicorn startup and Render health GET `/` returned 200. This verifies worker process startup only, not a render, provider authentication, or an MP4 artifact.
 - The application service `autopolis-royal-v3` is still configured to `main` with auto-deploy off; its callback is not running the private-test branch code. No render job was submitted, so no public media was produced.
 - PR #38 was returned to draft after confirming Phase 2's artifact/license gate remains open. Do not merge or start upscaler/Blender/game phases until the real private artifact gate is satisfied.
+
+
+## Callback isolation hardening — 2026-11-28 (branch-only)
+
+- Rechecked actual PR #38 head and Render configuration before edits. PR remains open/draft/unmerged; app service `autopolis-royal-v3` remains on `main` with auto-deploy off. No app deployment was triggered.
+- Added callback mode classification requiring both the exact `[AUTOPOLIS PRIVATE QC TEST]` task-description prefix and `provider=private_test`. A mismatch is failed closed before the YouTube publisher path.
+- Added a second explicit public-publisher boundary guard.
+- Added conditional status claims before accepting private-ready state or entering public `publishing`; duplicate public callbacks that lose the claim return HTTP 202 rather than calling YouTube. Existing `published` and `publishing` replay responses are now tested through a shared disposition helper.
+- Added tests for missing marker, wrong provider, exact-marker private classification, replay/idempotency disposition, and private-mode exclusion from public publishing. Existing QC tests cover missing/invalid stream metadata and narration coverage.
+- Code commits: `877b28964b92e12952a6531a442355ad558fe6ed`, `55ad9f444671d688cc59a58ae31bfc665d38e23a`, `5b4cf9e13b83ce8c05136febbbddfdf7267c1a28`, `4729142dae89fdb70e56c55352a5e8a9942fe3f4`, `51dedb0cf95d6b9609ba60154c161140c12274ab`.
+- Build Verify run `46168464591` passed at test head `51dedb0cf95d6b9609ba60154c161140c12274ab`. Autopolis CI `46168464603` and Video render worker tests `46168464652` were still running at report update; do not claim their completion until checked.
+- Render worker service is configured to the feature branch but live deployment remains `1a150b6c62aa91cf1fc8f9f9a221af24d95dec8f`, not the latest callback code. Production app callback remains on `main`. Therefore no private test was submitted and no MP4 was generated or inspected. No public publishing occurred.
+- Phase 2 remains OPEN. The callback hardening is branch-only until safe staging/deployment is approved and verified; actual 720p/1080p/1440p artifact evidence and provider licensing/quota/connectivity are still blockers.
