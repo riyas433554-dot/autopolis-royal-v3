@@ -112,3 +112,11 @@ def test_ltx_provider_calls_public_space_with_target_dimensions(monkeypatch, tmp
     assert predict[1][7] == 1920
     assert predict[2]["api_name"] == "/generate_video"
     assert result.endswith("ltx-visuals.mp4")
+
+def test_high_resolution_qc_rejects_static_video_tail_when_visuals_are_short():
+    with pytest.raises(RuntimeError, match="visual coverage"):
+        main._validate_visual_coverage(video_duration=35.0, voice_duration=45.0)
+
+
+def test_high_resolution_qc_accepts_visuals_covering_narration():
+    main._validate_visual_coverage(video_duration=43.0, voice_duration=45.0)
