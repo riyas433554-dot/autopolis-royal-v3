@@ -140,3 +140,41 @@ def test_render_request_rejects_high_resolution_when_ltx_is_disabled(monkeypatch
             script="Narration", resolution="1080p",
             callback_url="https://autopolis.example/callback",
         )
+
+
+def test_ltx_concat_manifest_separates_multiple_clips_with_real_newlines(monkeypatch, tmp_path):
+    generated = tmp_path / "ltx-generated.mp4"
+    generated.write_bytes(b"fake-mp4")
+    manifests = []
+
+    class FakeClient:
+        def __init__(self, space, token=None, verbose=False):
+            pass
+
+        def predict(self, *args, **kwargs):
+            return str(generated), 123
+
+    def fake_run(command, *args, **kwargs):
+        if "concat" in command and "-f" in command:
+            manifest_path = command[command.index("-i") + 1]
+            manifests.append(open(manifest_path, encoding="utf-8").read())
+        return None
+
+    monkeypatch.setattr(main, "Client", FakeClient)
+    monkeypatch.setattr(main, "_scene_prompts", lambda script, limit: ["Scene one", "Scene two"])
+    monkeypatch.setattr(main, "_probe", lambda path: {
+        "width": 1920, "height": 1088, "duration_seconds": 10.0,
+    })
+    monkeypatch.setattr(main.subprocess, "run", fake_run)
+    monkeypatch.setattr(main.os.path, "getsize", lambda path: 1)
+    monkeypatch.setenv("LTX_ZEROGPU_CLIP_SECONDS", "10")
+
+    main._render_with_ltx_zerogpu(
+        "Narration script", "Title", "video", "1080p", str(tmp_path),
+    )
+
+    assert len(manifests) == 1
+    lines = manifests[0].splitlines()
+    assert len(lines) == 2
+    assert all(line.startswith("file ") for line in lines)
+    assert "\\\\nfile " not in manifests[0]
