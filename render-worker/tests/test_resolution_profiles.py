@@ -242,7 +242,8 @@ def test_ltx_public_space_fails_fast_for_profiles_above_documented_native_limit(
         )
 
 
-def test_agnes_free_video_flash_routes_720p_and_rejects_paid_profiles():
+def test_agnes_free_video_flash_routes_720p_and_rejects_paid_profiles(monkeypatch):
+    monkeypatch.setenv("AGNES_API_KEY", "test-key")
     assert main._select_render_source("agnes_video", "720p") == "agnes_video"
     with pytest.raises(RuntimeError, match="only supports 720p"):
         main._select_render_source("agnes_video", "1080p")
