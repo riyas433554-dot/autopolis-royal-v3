@@ -1,6 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
-import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport } from './video-renderer.js';
+import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, classifyVideoRenderCallback } from './video-renderer.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -61,6 +61,15 @@ export default async function handler(req, res) {
       await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: message, updated_at: new Date().toISOString() }).eq('id', job.id);
       return res.status(200).json({ ok: true, status: 'failed', error: message });
     }
+
+    const callbackMode = classifyVideoRenderCallback({ task, provider: job.provider });
+    if (callbackMode.mode === 'reject') {
+      const message = callbackMode.error;
+      await supabase.from('video_render_jobs').update({
+        status: 'failed', qc_passed: false, error: message, updated_at: new Date().toISOString(),
+      }).eq('id', job.id).eq('status', job.status);
+      return res.status(200).json({ ok: true, status: 'failed', error: message });
+    }
     const durationError = validateVideoDuration(task.description, req.body?.qc_report);
     if (durationError) {
       await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: durationError, updated_at: new Date().toISOString() }).eq('id', job.id);
@@ -76,31 +85,39 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, status: 'failed', error: qcError });
     }
 
-    if (job.provider === 'private_test') {
+    if (callbackMode.mode === 'private_test') {
       const report = { ...(req.body?.qc_report || {}), private_test: true };
-      const { error: privateReadyError } = await supabase.from('video_render_jobs').update({
+      const { data: privateClaim, error: privateReadyError } = await supabase.from('video_render_jobs').update({
         status: 'ready', video_url: videoUrl, qc_passed: true, qc_report: report,
         rendered_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
-      }).eq('id', job.id);
+      }).eq('id', job.id).eq('status', job.status).select('id').maybeSingle();
       if (privateReadyError) throw privateReadyError;
+      if (!privateClaim) {
+        return res.status(202).json({ ok: true, status: 'already_processing', private_test: true });
+      }
       return res.status(200).json({ ok: true, status: 'ready', private_test: true, video_url: videoUrl });
+    }
+
+    const { data: publicClaim, error: claimError } = await supabase.from('video_render_jobs').update({
+      status: 'publishing', video_url: videoUrl, qc_passed: true,
+      qc_report: req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {},
+      rendered_at: new Date().toISOString(), updated_at: new Date().toISOString(), error: null,
+    }).eq('id', job.id).eq('status', job.status).select('id').maybeSingle();
+    if (claimError) throw claimError;
+    if (!publicClaim) {
+      return res.status(202).json({ ok: true, status: 'already_processing' });
     }
 
     const { data: account, error: accountError } = await supabase.from('connected_accounts')
       .select('account_id,account_name').eq('provider', 'youtube').eq('status', 'connected').limit(1).maybeSingle();
     if (accountError) throw accountError;
-
-    const { error: readyError } = await supabase.from('video_render_jobs').update({
-      status: account ? 'publishing' : 'ready',
-      video_url: videoUrl,
-      qc_passed: true,
-      qc_report: req.body?.qc_report && typeof req.body.qc_report === 'object' ? req.body.qc_report : {},
-      rendered_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      error: account ? null : 'QC passed; no connected YouTube account found',
-    }).eq('id', job.id);
-    if (readyError) throw readyError;
-    if (!account) return res.status(200).json({ ok: true, status: 'ready', video_url: videoUrl });
+    if (!account) {
+      const { error: readyError } = await supabase.from('video_render_jobs').update({
+        status: 'ready', error: 'QC passed; no connected YouTube account found', updated_at: new Date().toISOString(),
+      }).eq('id', job.id).eq('status', 'publishing');
+      if (readyError) throw readyError;
+      return res.status(200).json({ ok: true, status: 'ready', video_url: videoUrl });
+    }
 
     const ownerToken = process.env.AUTOPOLIS_LIFECYCLE_ADMIN_TOKEN || '';
     let uploadResult;
