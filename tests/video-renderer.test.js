@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport, isPrivateVideoTestTask } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -226,4 +226,11 @@ test('renderer callback QC accepts complete narration and stream metadata', () =
     audio_codec: 'aac',
     resolution_profile: 'source',
   }), null);
+});
+
+
+test('private QC test marker is explicit and suppresses public publishing', () => {
+  assert.equal(isPrivateVideoTestTask({ description: '[AUTOPOLIS PRIVATE QC TEST] verify 720p' }), true);
+  assert.equal(isPrivateVideoTestTask({ description: 'ordinary customer video' }), false);
+  assert.equal(isPrivateVideoTestTask({ description: '[autopolis private qc test] 720p' }), false);
 });
