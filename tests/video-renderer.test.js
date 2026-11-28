@@ -240,3 +240,20 @@ test('private QC test marker is explicit and suppresses public publishing', () =
   });
   assert.equal(payload.private_test, true);
 });
+
+
+test('render idempotency key changes when requested resolution changes', async () => {
+  const keys = [];
+  for (const resolution of ['720p', '1080p']) {
+    await dispatchVideoRender({
+      task: { id: 91, title: 'Resolution QC', deliverable_type: 'video', video_resolution: resolution },
+      result: 'Same narration',
+      env: { VIDEO_RENDERER_URL: 'https://renderer.example', VIDEO_RENDERER_TOKEN: 'secret' },
+      fetchImpl: async (_url, options) => {
+        keys.push(options.headers['idempotency-key']);
+        return new Response(JSON.stringify({ job_id: 'resolution-' + resolution, status: 'queued' }), { status: 202 });
+      },
+    });
+  }
+  assert.notEqual(keys[0], keys[1]);
+});
