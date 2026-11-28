@@ -67,3 +67,11 @@ No Phase 3 work, production migration, main-branch change, or public media publi
 - CI at this exact head: Autopolis Build Verify run [46159904022](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904022) PASS; Autopolis CI [46159904036](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904036) PASS; Video render worker tests [46159904040](https://github.com/riyas433554-dot/autopolis-royal-v3/actions/runs/46159904040) PASS.
 - Render service inventory read-only confirmed the worker remains on the implementation branch with auto-deploy off, and the app service remains on `main`. No deploy or private job was triggered. Callback isolation is therefore branch-tested but not live-verified.
 - Phase 2 remains OPEN until a deployed, authenticated private 720p render produces an MP4 that is downloaded and inspected for actual dimensions, aspect ratio, codecs, duration, narration coverage, and visual playback. 1080p/1440p are not certified.
+
+
+## Worker branch deployment check — 2026-11-28
+
+- Triggered existing worker service deployment `dep-dc5f6rsipgvc73c5h4o0` for branch head `1a150b6c62aa91cf1fc8f9f9a221af24d95dec8f`; Render reports status `live`.
+- Render logs show Uvicorn startup and Render health GET `/` returned 200. This verifies worker process startup only, not a render, provider authentication, or an MP4 artifact.
+- The application service `autopolis-royal-v3` is still configured to `main` with auto-deploy off; its callback is not running the private-test branch code. No render job was submitted, so no public media was produced.
+- PR #38 was returned to draft after confirming Phase 2's artifact/license gate remains open. Do not merge or start upscaler/Blender/game phases until the real private artifact gate is satisfied.
