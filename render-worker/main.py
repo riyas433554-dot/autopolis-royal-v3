@@ -470,6 +470,20 @@ def _validate_narration_coverage(video_duration: float, voice_duration: float) -
         )
 
 
+def _validate_visual_coverage(video_duration: float, voice_duration: float) -> None:
+    """High-resolution AI footage must not be padded with a long frozen final frame."""
+    tolerance = float(os.getenv("VIDEO_QC_MAX_UNVISUALIZED_SECONDS", "3.0"))
+    if tolerance < 0:
+        raise RuntimeError("VIDEO_QC_MAX_UNVISUALIZED_SECONDS must be non-negative")
+    unvisualized_seconds = max(0.0, voice_duration - video_duration)
+    if unvisualized_seconds > tolerance:
+        raise RuntimeError(
+            "QC failed: visual coverage is too short; "
+            f"video={video_duration:.2f}s voice={voice_duration:.2f}s "
+            f"unvisualized={unvisualized_seconds:.2f}s allowed={tolerance:.2f}s"
+        )
+
+
 def _compress_video(source: str, voice_audio: str, target: str, video_duration: float, voice_duration: float, subtitle_path: str | None = None):
     _validate_narration_coverage(video_duration, voice_duration)
     duration = max(video_duration, voice_duration)
@@ -614,6 +628,8 @@ def _render_with_hf_zerogpu(script: str, title: str, deliverable_type: str, temp
 
 def _ltx_request_dimensions(target: tuple[int, int], multiple: int = 32) -> tuple[int, int]:
     """Round target width/height up to LTX's spatial multiple without downscaling."""
+    if multiple <= 0:
+        raise ValueError("multiple must be positive")
     width, height = target
     return ((width + multiple - 1) // multiple * multiple,
             (height + multiple - 1) // multiple * multiple)
@@ -625,10 +641,10 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
     space = os.getenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3").strip()
     token = os.getenv("HF_TOKEN", "").strip() or None
     client = Client(space, token=token, verbose=False)
-    prompts = _scene_prompts(script, limit=int(os.getenv("LTX_ZEROGPU_SCENE_WORDS", "20")))
+    prompts = _scene_prompts(script, limit=int(os.getenv("LTX_ZEROGPU_SCENE_WORDS", "24")))
     if not prompts:
         raise RuntimeError("No script scenes available for LTX ZeroGPU generation")
-    default_max_scenes = "4" if deliverable_type == "reel" else "8"
+    default_max_scenes = "4" if deliverable_type == "reel" else "6"
     max_scenes = int(os.getenv("LTX_ZEROGPU_MAX_SCENES", default_max_scenes))
     if max_scenes < 1:
         raise RuntimeError("LTX_ZEROGPU_MAX_SCENES must be positive")
@@ -644,7 +660,7 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
 
     clip_paths = []
     for index, scene in enumerate(prompts):
-        scene_duration = max(2.0, min(max_clip_seconds, round(len(scene.split()) / 2.2, 1)))
+        scene_duration = max(2.0, min(max_clip_seconds, round(len(scene.split()) / 2.5, 1)))
         visual_prompt = (
             f"Cinematic scene for {title}. Visualize: {scene}. "
             "Natural motion, coherent subject, deliberate camera movement, "
@@ -774,6 +790,8 @@ def render_and_callback(job_id: str):
             subtitle_path = _transcribe_voice_studio_audio(voice_audio, os.path.join(temp, "captions.srt"))
         except Exception as caption_exc:
             caption_error = str(caption_exc)[:300]
+        if resolution != "source":
+            _validate_visual_coverage(source_qc["duration_seconds"], voice_duration)
         _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
         qc = _probe(final)
         _validate_narration_coverage(qc["duration_seconds"], voice_duration)
