@@ -244,6 +244,7 @@ def test_ltx_public_space_fails_fast_for_profiles_above_documented_native_limit(
 
 def test_agnes_free_video_flash_routes_720p_and_rejects_paid_profiles(monkeypatch):
     monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.setenv("AGNES_VIDEO_ENABLED", "true")
     assert main._select_render_source("agnes_video", "720p") == "agnes_video"
     with pytest.raises(RuntimeError, match="only supports 720p"):
         main._select_render_source("agnes_video", "1080p")
@@ -334,6 +335,7 @@ def test_auto_provider_keeps_source_jobs_on_existing_hf_provider(monkeypatch):
 
 def test_auto_provider_routes_720p_to_agnes_only_when_key_exists(monkeypatch):
     monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.setenv("AGNES_VIDEO_ENABLED", "true")
     assert main._select_render_source("auto", "720p") == "agnes_video"
 
 
@@ -341,3 +343,10 @@ def test_auto_provider_rejects_720p_without_agnes_key(monkeypatch):
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="AGNES_API_KEY"):
         main._select_render_source("auto", "720p")
+
+
+def test_agnes_provider_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.delenv("AGNES_VIDEO_ENABLED", raising=False)
+    with pytest.raises(RuntimeError, match="AGNES_VIDEO_ENABLED"):
+        main._select_render_source("agnes_video", "720p")
