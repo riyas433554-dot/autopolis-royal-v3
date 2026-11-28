@@ -395,7 +395,7 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
     };
 
     const labelSprites: { s: THREE.Sprite; slug: string; x: number; y: number; z: number }[] = [];
-    const agentSprites: { s: THREE.Sprite; marker: THREE.Group; slug: string; x: number; y: number; z: number; baseY: number; agent: Agent }[] = [];
+    const agentSprites: { s: THREE.Sprite; slug: string; x: number; y: number; z: number; baseY: number; agent: Agent }[] = [];
     BUILDING_GEO.forEach(geo => {
       const g = buildShape(geo);
       g.position.set(geo.x, 0, geo.z);
@@ -498,9 +498,9 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
         const mobile = mount.clientWidth / Math.max(1, mount.clientHeight) < 0.78;
         cam.dTheta = 0.7; cam.dPhi = mobile ? 0.88 : 0.92; cam.dRadius = mobile ? 194 : 178; cam.dTx = 0; cam.dTz = 0;
       },
-      setSelected: (slug: string | null) => { labelSprites.forEach(l => { const m = l.s.material as THREE.SpriteMaterial; const sel2 = l.slug === slug; m.depthTest = !sel2; l.s.renderOrder = sel2 ? 2000 : 0; m.color.set(sel2 ? 0xffd75e : 0xffffff); }); agentSprites.forEach(a => { const selectedAgentBuilding = a.slug === slug; (a.s.material as THREE.SpriteMaterial).opacity = selectedAgentBuilding ? 1 : 0.88; a.marker.scale.setScalar(selectedAgentBuilding ? 1.22 : 1); }); const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) { ring.visible = false; return; } ring.visible = true; ring.position.x = geo.x; ring.position.z = geo.z; const r = Math.max(geo.w, geo.d) * 0.78 + 3; ring.scale.set(r, r, 1); },
+      setSelected: (slug: string | null) => { labelSprites.forEach(l => { const m = l.s.material as THREE.SpriteMaterial; const sel2 = l.slug === slug; m.depthTest = !sel2; l.s.renderOrder = sel2 ? 2000 : 0; m.color.set(sel2 ? 0xffd75e : 0xffffff); }); agentSprites.forEach(a => { const selectedAgentBuilding = a.slug === slug; (a.s.material as THREE.SpriteMaterial).opacity = selectedAgentBuilding ? 1 : 0.88; }); const geo = BUILDING_GEO.find(b => b.slug === slug); if (!geo) { ring.visible = false; return; } ring.visible = true; ring.position.x = geo.x; ring.position.z = geo.z; const r = Math.max(geo.w, geo.d) * 0.78 + 3; ring.scale.set(r, r, 1); },
       setAgents: (list: Agent[]) => {
-        agentSprites.forEach(a => { scene.remove(a.s); scene.remove(a.marker); (a.s.material as THREE.SpriteMaterial).map?.dispose(); (a.s.material as THREE.SpriteMaterial).dispose(); a.marker.traverse(o => { if ((o as THREE.Mesh).isMesh) { (o as THREE.Mesh).geometry.dispose(); const mat = (o as THREE.Mesh).material; if (Array.isArray(mat)) mat.forEach(m => m.dispose()); else mat.dispose(); } }); });
+        agentSprites.forEach(a => { scene.remove(a.s); (a.s.material as THREE.SpriteMaterial).map?.dispose(); (a.s.material as THREE.SpriteMaterial).dispose(); });
         agentSprites.length = 0;
         if (!SHOW_AGENT_MARKERS) return;
         const byBuilding = new Map<string, Agent[]>();
@@ -510,16 +510,11 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
           members.forEach((agent, index) => {
             const col = index % 3, row = Math.floor(index / 3);
             const x = geo.x + (col - 1) * Math.min(5, geo.w * 0.18), z = geo.z + row * 3.2;
-            const marker = new THREE.Group();
-            const ringM = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.35, 24), new THREE.MeshBasicMaterial({ color: 0x55ddff, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }));
-            ringM.rotation.x = -Math.PI / 2; ringM.position.y = 0.2; marker.add(ringM);
-            const orb = new THREE.Mesh(new THREE.SphereGeometry(0.82, 14, 10), new THREE.MeshStandardMaterial({ color: 0x55ddff, emissive: 0x087ea4, emissiveIntensity: 1.2, metalness: 0.35, roughness: 0.22 }));
-            orb.position.y = 1.25; marker.add(orb);
-            marker.position.set(x, geo.h + 3 + row * 2.2, z); marker.renderOrder = 1100; scene.add(marker);
+            // Keep the agent name/role label, but do not render the floating cyan orb/ring marker.
             const s = makeAgentLabel(agent.name || agent.code || 'Agent', agent.role || agent.department || 'AI Agent');
-            const baseY = marker.position.y + 11;
+            const baseY = geo.h + 14 + row * 2.2;
             s.position.set(x, baseY, z); scene.add(s);
-            agentSprites.push({ s, marker, slug, x, y: baseY, z, baseY, agent });
+            agentSprites.push({ s, slug, x, y: baseY, z, baseY, agent });
           });
         });
         stateRef.current?.setSelected(propsRef.current.selectedSlug);
@@ -607,9 +602,6 @@ export default function City3D({ buildings, agents, selectedSlug, onSelect, nigh
           const a = item.agentEntry;
           const working = a.agent.status === 'active' || a.agent.status === 'busy';
           (item.sprite.material as THREE.SpriteMaterial).opacity = selected ? 1 : working ? 0.96 : 0.86;
-          a.marker.visible = !P.reduced;
-          a.marker.position.y = a.baseY - 11;
-          a.marker.scale.setScalar(selected ? 1.22 : 1);
         } else if (item.buildingEntry) {
           (item.sprite.material as THREE.SpriteMaterial).opacity = selected ? 1 : THREE.MathUtils.clamp(1.3 - item.dist / 270, 0.3, 0.95);
         }
