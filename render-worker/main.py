@@ -47,12 +47,15 @@ class RenderJobRequest(BaseModel):
     def require_enabled_high_resolution_provider(cls, value: str) -> str:
         provider = os.getenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu").strip().lower()
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+        agnes_enabled = os.getenv("AGNES_VIDEO_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
         if provider == "auto":
             if value == "source":
                 provider = "hf_zerogpu"
             elif value == "720p":
                 if not os.getenv("AGNES_API_KEY", "").strip():
                     raise ValueError("AGNES_API_KEY is required for automatic 720p video rendering")
+                if not agnes_enabled:
+                    raise ValueError("AGNES_VIDEO_ENABLED must be true to opt in to hosted Agnes video processing")
                 provider = "agnes_video"
             elif ltx_enabled:
                 provider = "ltx_zerogpu"
@@ -62,10 +65,13 @@ class RenderJobRequest(BaseModel):
             raise ValueError("LTX ZeroGPU is disabled; enable it only after license and quota review")
         if provider == "agnes_video" and value in {"1080p", "1440p"}:
             raise ValueError("Agnes Video Flash only supports 720p; 1080p/1440p require a paid or separately verified provider")
+        if provider == "agnes_video":
+            if not os.getenv("AGNES_API_KEY", "").strip():
+                raise ValueError("AGNES_API_KEY is required for the Agnes Video provider")
+            if not agnes_enabled:
+                raise ValueError("AGNES_VIDEO_ENABLED must be true to opt in to hosted Agnes video processing")
         if value != "source" and provider not in {"ai_video_studio", "agnes_video"} and not ltx_enabled:
             raise ValueError("LTX ZeroGPU is disabled; high-resolution rendering is unavailable until license and quota review")
-        if provider == "agnes_video" and not os.getenv("AGNES_API_KEY", "").strip():
-            raise ValueError("AGNES_API_KEY is required for the Agnes Video provider")
         return value
 
 
@@ -473,12 +479,15 @@ def _select_render_source(configured_provider: str, resolution: str,
                           ltx_enabled: bool | None = None) -> str:
     if ltx_enabled is None:
         ltx_enabled = os.getenv("LTX_ZEROGPU_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    agnes_enabled = os.getenv("AGNES_VIDEO_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
     if configured_provider == "auto":
         if resolution == "source":
             configured_provider = "hf_zerogpu"
         elif resolution == "720p":
             if not os.getenv("AGNES_API_KEY", "").strip():
                 raise RuntimeError("AGNES_API_KEY is required for automatic 720p video rendering")
+            if not agnes_enabled:
+                raise RuntimeError("AGNES_VIDEO_ENABLED must be true to opt in to hosted Agnes video processing")
             configured_provider = "agnes_video"
         elif ltx_enabled:
             configured_provider = "ltx_zerogpu"
@@ -494,6 +503,8 @@ def _select_render_source(configured_provider: str, resolution: str,
     if configured_provider == "agnes_video":
         if not os.getenv("AGNES_API_KEY", "").strip():
             raise RuntimeError("AGNES_API_KEY is required for the Agnes Video provider")
+        if not agnes_enabled:
+            raise RuntimeError("AGNES_VIDEO_ENABLED must be true to opt in to hosted Agnes video processing")
         return "agnes_video"
     if resolution != "source" and configured_provider != "ai_video_studio":
         if not ltx_enabled:
@@ -632,6 +643,8 @@ def _agnes_generate_clip(prompt: str, target: str, deliverable_type: str) -> str
     api_key = os.getenv("AGNES_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("AGNES_API_KEY is required for Agnes Video Flash")
+    if os.getenv("AGNES_VIDEO_ENABLED", "false").strip().lower() not in {"1", "true", "yes"}:
+        raise RuntimeError("AGNES_VIDEO_ENABLED must be true to opt in to hosted Agnes video processing")
     base = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1").rstrip("/")
     if not base.endswith("/v1"):
         base += "/v1"
