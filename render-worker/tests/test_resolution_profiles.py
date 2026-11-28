@@ -116,6 +116,43 @@ def test_ltx_provider_uses_documented_preset_then_crops_to_720p(monkeypatch, tmp
     assert any("crop=1280:720" in str(command) for command in commands)
     assert result.endswith("ltx-visuals.mp4")
 
+
+def test_ltx_provider_uses_documented_portrait_preset_then_crops_to_vertical_720p(monkeypatch, tmp_path):
+    generated = tmp_path / "ltx-portrait.mp4"
+    generated.write_bytes(b"fake-mp4")
+    calls = []
+    commands = []
+
+    class FakeClient:
+        def __init__(self, space, token=None, verbose=False):
+            pass
+
+        def predict(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return str(generated), 123
+
+    monkeypatch.setattr(main, "Client", FakeClient)
+    monkeypatch.setattr(main, "_scene_prompts", lambda script, limit: ["A vertical cinematic scene"])
+    monkeypatch.setattr(main, "_probe", lambda path: {
+        "width": 1024, "height": 1536, "duration_seconds": 10.0,
+    })
+    monkeypatch.setattr(main.subprocess, "run", lambda command, *args, **kwargs: commands.append(command))
+    monkeypatch.setattr(main.os.path, "getsize", lambda path: 1)
+    monkeypatch.setenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3")
+    monkeypatch.setenv("LTX_ZEROGPU_CLIP_SECONDS", "10")
+
+    result = main._render_with_ltx_zerogpu(
+        "Narration script", "Title", "reel", "720p", str(tmp_path),
+    )
+
+    args, kwargs = calls[0]
+    assert args[6] == 1536
+    assert args[7] == 1024
+    assert kwargs["api_name"] == "/generate_video"
+    assert any("crop=720:1280" in str(command) for command in commands)
+    assert result.endswith("ltx-visuals.mp4")
+
+
 def test_high_resolution_qc_rejects_static_video_tail_when_visuals_are_short():
     with pytest.raises(RuntimeError, match="visual coverage"):
         main._validate_visual_coverage(video_duration=35.0, voice_duration=45.0)
