@@ -635,6 +635,7 @@ def render_and_callback(job_id: str):
             caption_error = str(caption_exc)[:300]
         _compress_video(source, voice_audio, final, source_qc["duration_seconds"], voice_duration, subtitle_path)
         qc = _probe(final)
+        _validate_narration_coverage(qc["duration_seconds"], voice_duration)
         qc["size_bytes"] = os.path.getsize(final)
         qc["captions_burned"] = bool(subtitle_path)
         if caption_error:
