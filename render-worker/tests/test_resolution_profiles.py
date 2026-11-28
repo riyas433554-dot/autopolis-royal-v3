@@ -240,3 +240,61 @@ def test_ltx_public_space_fails_fast_for_profiles_above_documented_native_limit(
         main._render_with_ltx_zerogpu(
             "Narration script", "Title", "video", resolution, str(tmp_path),
         )
+
+
+def test_agnes_free_video_flash_routes_720p_and_rejects_paid_profiles():
+    assert main._select_render_source("agnes_video", "720p") == "agnes_video"
+    with pytest.raises(RuntimeError, match="only supports 720p"):
+        main._select_render_source("agnes_video", "1080p")
+    with pytest.raises(RuntimeError, match="only supports 720p"):
+        main._select_render_source("agnes_video", "1440p")
+
+
+def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        content = b"mp4-bytes"
+        headers = {"content-type": "video/mp4"}
+
+        def json(self):
+            if self.content == b"mp4-bytes":
+                return {"status": "completed", "url": "https://media.example/video.mp4"}
+            return {"video_id": "video-123"}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size=1024):
+            yield self.content
+
+    def fake_post(url, **kwargs):
+        calls.append(("post", url, kwargs))
+        response = FakeResponse()
+        response.content = b'{"video_id":"video-123"}'
+        return response
+
+    def fake_get(url, **kwargs):
+        calls.append(("get", url, kwargs))
+        if "agnesapi" in url:
+            response = FakeResponse()
+            response.content = b'{"status":"completed","url":"https://media.example/video.mp4"}'
+            return response
+        return FakeResponse()
+
+    monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.setattr(main.requests, "post", fake_post)
+    monkeypatch.setattr(main.requests, "get", fake_get)
+    monkeypatch.setattr(main.time, "sleep", lambda seconds: None)
+    target = str(tmp_path / "agnes.mp4")
+
+    result = main._agnes_generate_clip("A cinematic scene", target, "reel")
+
+    assert result == target
+    assert open(target, "rb").read() == b"mp4-bytes"
+    request = calls[0][2]["json"]
+    assert request["model"] == "agnes-video-2.5-flash"
+    assert request["size"] == "720P"
+    assert request["aspect_ratio"] == "9:16"
