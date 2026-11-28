@@ -1,6 +1,6 @@
 import supabase from './db-client.js';
 import youtubePublishHandler from './youtube-publish.js';
-import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from './video-renderer.js';
+import { extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration, validateRendererQcReport } from './video-renderer.js';
 
 function isRenderer(req) {
   const token = process.env.VIDEO_RENDERER_CALLBACK_TOKEN;
@@ -65,6 +65,15 @@ export default async function handler(req, res) {
     if (durationError) {
       await supabase.from('video_render_jobs').update({ status: 'failed', qc_passed: false, error: durationError, updated_at: new Date().toISOString() }).eq('id', job.id);
       return res.status(200).json({ ok: true, status: 'failed', error: durationError });
+    }
+
+    const narrationTolerance = Number(process.env.VIDEO_QC_MAX_UNNARRATED_SECONDS || 3);
+    const qcError = validateRendererQcReport(req.body?.qc_report, narrationTolerance);
+    if (qcError) {
+      await supabase.from('video_render_jobs').update({
+        status: 'failed', qc_passed: false, error: qcError, updated_at: new Date().toISOString(),
+      }).eq('id', job.id);
+      return res.status(200).json({ ok: true, status: 'failed', error: qcError });
     }
 
     const { data: account, error: accountError } = await supabase.from('connected_accounts')

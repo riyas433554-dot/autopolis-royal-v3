@@ -102,6 +102,50 @@ export function validateVideoDuration(taskDescription, qcReport) {
   return null;
 }
 
+
+export function validateRendererQcReport(qcReport, maxUnnarratedSeconds = 3) {
+  const report = qcReport && typeof qcReport === 'object' && !Array.isArray(qcReport) ? qcReport : null;
+  if (!report) return 'QC report is required';
+  const duration = Number(report.duration_seconds);
+  const voiceDuration = Number(report.voice_duration_seconds);
+  const width = Number(report.width);
+  const height = Number(report.height);
+  if (!Number.isFinite(duration) || duration <= 0 ||
+      !Number.isFinite(voiceDuration) || voiceDuration <= 0 ||
+      !Number.isInteger(width) || width <= 0 ||
+      !Number.isInteger(height) || height <= 0 ||
+      typeof report.video_codec !== 'string' || !report.video_codec.trim() ||
+      typeof report.audio_codec !== 'string' || !report.audio_codec.trim()) {
+    return 'QC report must include positive duration, narration duration, dimensions, and video/audio codecs';
+  }
+  if (!Number.isFinite(maxUnnarratedSeconds) || maxUnnarratedSeconds < 0) {
+    return 'Narration QC tolerance must be a non-negative number';
+  }
+  const uncovered = Math.max(0, duration - voiceDuration);
+  if (uncovered > maxUnnarratedSeconds) {
+    return 'QC failed: narration coverage is too short; ' +
+      'video=' + duration.toFixed(2) + 's voice=' + voiceDuration.toFixed(2) +
+      's uncovered=' + uncovered.toFixed(2) + 's allowed=' + maxUnnarratedSeconds.toFixed(2) + 's';
+  }
+
+  const profile = String(report.resolution_profile || 'source').toLowerCase();
+  if (profile !== 'source') {
+    const dimensions = {
+      '720p': [1280, 720],
+      '1080p': [1920, 1080],
+      '1440p': [2560, 1440],
+    };
+    const target = dimensions[profile];
+    if (!target) return 'QC report contains an unsupported resolution profile';
+    const expected = report.deliverable_type === 'reel' ? [target[1], target[0]] : target;
+    if (width < expected[0] || height < expected[1]) {
+      return 'QC failed: requested ' + profile + ' profile requires at least ' +
+        expected[0] + 'x' + expected[1] + '; got ' + width + 'x' + height;
+    }
+  }
+  return null;
+}
+
 export function buildVideoRenderPayload({ task, result, callbackUrl, profile, resolution }) {
   const taskId = Number(task?.id);
   if (!Number.isInteger(taskId) || taskId <= 0) throw new Error('A valid task id is required');
