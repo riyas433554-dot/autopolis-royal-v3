@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Building2, Bot, ListTodo, Activity as ActIcon, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { api, timeAgo, type Building, type Agent, type Task, type ActivityItem } from '../lib/api';
@@ -14,10 +14,28 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
   const [taskFilter, setTaskFilter] = useState('All'); const [actFilter, setActFilter] = useState('All');
   const [form, setForm] = useState({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report', video_resolution: 'source' });
   const [saving, setSaving] = useState(false); const [note, setNote] = useState('');
-  const load = async () => { setLoading(true); setErr(''); try { const [b, a, t, ac, co] = await Promise.all([api('/api/buildings'), api('/api/agents'), api('/api/tasks'), api('/api/activity'), api('/api/companies')]); setBuildings(b); setAgents(a); setTasks(t); setActivity(ac); setCompanies(Array.isArray(co) ? co : []); } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Request failed'); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, []);
-  const bName = (s: string) => buildings.find(b => b.slug === s)?.name || s;
-  const alerts = useMemo(() => [...tasks.filter(t => t.status === 'blocked').map(t => ({ id: 't' + t.id, text: `Blocked task: “${t.title}” at ${bName(t.building_slug)}`, link: '/building/' + t.building_slug })), ...agents.filter(a => a.status === 'error').map(a => ({ id: 'a' + a.id, text: `Agent ${a.name} (${a.code}) flagged with error status at ${bName(a.building_slug)}`, link: '/agents' })), ...buildings.filter(b => b.status === 'maintenance').map(b => ({ id: 'b' + b.id, text: `${b.name} is under maintenance`, link: '/building/' + b.slug }))], [tasks, agents, buildings]);
+  const fetchOperationsData = async () => Promise.all([
+    api('/api/buildings'), api('/api/agents'), api('/api/tasks'), api('/api/activity'), api('/api/companies'),
+  ]);
+  const applyOperationsData = ([b, a, t, ac, co]: Awaited<ReturnType<typeof fetchOperationsData>>) => {
+    setBuildings(b); setAgents(a); setTasks(t); setActivity(ac); setCompanies(Array.isArray(co) ? co : []);
+  };
+  const load = async () => {
+    setLoading(true); setErr('');
+    try { applyOperationsData(await fetchOperationsData()); }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Request failed'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => {
+    let active = true;
+    fetchOperationsData()
+      .then(data => { if (active) applyOperationsData(data); })
+      .catch((e: unknown) => { if (active) setErr(e instanceof Error ? e.message : 'Request failed'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const bName = useCallback((s: string) => buildings.find(b => b.slug === s)?.name || s, [buildings]);
+  const alerts = useMemo(() => [...tasks.filter(t => t.status === 'blocked').map(t => ({ id: 't' + t.id, text: `Blocked task: “${t.title}” at ${bName(t.building_slug)}`, link: '/building/' + t.building_slug })), ...agents.filter(a => a.status === 'error').map(a => ({ id: 'a' + a.id, text: `Agent ${a.name} (${a.code}) flagged with error status at ${bName(a.building_slug)}`, link: '/agents' })), ...buildings.filter(b => b.status === 'maintenance').map(b => ({ id: 'b' + b.id, text: `${b.name} is under maintenance`, link: '/building/' + b.slug }))], [tasks, agents, buildings, bName]);
   const createTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) { setNote('Task title is required.'); return; }
@@ -34,11 +52,11 @@ export default function OperationsPage({ initialTab = 'overview' }: { initialTab
       await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: 'New task created: ' + form.title, building_slug: payload.building_slug, detail: (company ? company.name + ' · ' : '') + 'Assigned to ' + (form.agent_name || 'Unassigned') + ' · ' + form.deliverable_type + ' · priority ' + form.priority }) });
       setForm({ title: '', description: '', building_slug: 'operations-tower', agent_name: '', priority: 'medium', company_id: '', deliverable_type: 'report', video_resolution: 'source' });
       load();
-    } catch (e2: any) { setNote('Could not create task: ' + e2.message); }
+    } catch (e2: unknown) { setNote('Could not create task: ' + (e2 instanceof Error ? e2.message : 'Request failed')); }
     finally { setSaving(false); }
   };
-  const updateTask = async (t: Task, patch: any, logTitle?: string) => { try { await api('/api/tasks', { method: 'PUT', body: JSON.stringify({ id: t.id, ...patch }) }); if (logTitle) await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: logTitle, building_slug: t.building_slug, detail: t.title }) }); load(); } catch (e2: any) { setNote('Update failed: ' + e2.message); } };
-  const deleteTask = async (t: Task) => { try { await api('/api/tasks', { method: 'DELETE', body: JSON.stringify({ id: t.id }) }); load(); } catch (e2: any) { setNote('Delete failed: ' + e2.message); } };
+  const updateTask = async (t: Task, patch: Partial<Pick<Task, 'status' | 'progress'>>, logTitle?: string) => { try { await api('/api/tasks', { method: 'PUT', body: JSON.stringify({ id: t.id, ...patch }) }); if (logTitle) await api('/api/activity', { method: 'POST', body: JSON.stringify({ type: 'task', title: logTitle, building_slug: t.building_slug, detail: t.title }) }); load(); } catch (e2: unknown) { setNote('Update failed: ' + (e2 instanceof Error ? e2.message : 'Request failed')); } };
+  const deleteTask = async (t: Task) => { try { await api('/api/tasks', { method: 'DELETE', body: JSON.stringify({ id: t.id }) }); load(); } catch (e2: unknown) { setNote('Delete failed: ' + (e2 instanceof Error ? e2.message : 'Request failed')); } };
   const filteredTasks = tasks.filter(t => taskFilter === 'All' || t.status === taskFilter);
   const actTypes = ['All', ...new Set(activity.map(a => a.type))];
   const filteredAct = activity.filter(a => actFilter === 'All' || a.type === actFilter);
