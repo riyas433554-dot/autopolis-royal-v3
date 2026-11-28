@@ -188,7 +188,7 @@ def test_ltx_public_space_fails_fast_for_profiles_above_documented_native_limit(
 
     monkeypatch.setattr(main, "Client", ForbiddenClient)
     monkeypatch.setenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3")
-    with pytest.raises(RuntimeError, match="public Space is limited"):
+    with pytest.raises(RuntimeError, match="no verified preset"):
         main._render_with_ltx_zerogpu(
             "Narration script", "Title", "video", resolution, str(tmp_path),
         )
