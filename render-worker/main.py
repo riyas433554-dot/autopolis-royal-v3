@@ -441,6 +441,17 @@ def _select_render_source(configured_provider: str, resolution: str) -> str:
     return configured_provider
 
 
+def _studio_render_options(resolution: str) -> dict:
+    """Request provider-side model upscaling for a named output profile."""
+    return {
+        "subtitles": False,
+        "music": False,
+        "interpolation": True,
+        "upscaling": resolution != "source",
+        "consistency": "schnell",
+    }
+
+
 def _validate_narration_coverage(video_duration: float, voice_duration: float) -> None:
     """Fail closed when narration is missing or ends materially before the video."""
     if video_duration <= 0:
@@ -627,8 +638,7 @@ def render_and_callback(job_id: str):
             raise RuntimeError("AI Video Studio did not return project id")
         _studio_request("POST", "/generation/start", json={
             "project_id": project_id,
-            "render_opts": {"subtitles": False, "music": False, "interpolation": True,
-                            "upscaling": resolution != "source", "consistency": "schnell"},
+            "render_opts": _studio_render_options(resolution),
         })
         deadline = time.time() + int(os.getenv("AI_VIDEO_STUDIO_TIMEOUT_SECONDS", "28800"))
         while time.time() < deadline:
