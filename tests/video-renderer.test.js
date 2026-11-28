@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVideoRenderPayload, dispatchVideoRender, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from '../api/video-renderer.js';
+import { buildVideoRenderPayload, dispatchVideoRender, normalizeVideoResolution, extractVideoNarration, extractYoutubeDescription, extractYoutubeTitle, validateVideoDuration } from '../api/video-renderer.js';
 
 test('builds a video render job from a completed task and script', () => {
   const payload = buildVideoRenderPayload({
@@ -190,4 +190,10 @@ test('includes selected customer resolution in render payload', () => {
     result: 'Narration',
   });
   assert.equal(payload.resolution, '1440p');
+});
+
+test('normalizes resolution only for video deliverables', () => {
+  assert.equal(normalizeVideoResolution('reel', '1440p'), '1440p');
+  assert.equal(normalizeVideoResolution('report', '1440p'), 'source');
+  assert.throws(() => normalizeVideoResolution('video', '4k'), /Unsupported video resolution/);
 });
