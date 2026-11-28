@@ -231,7 +231,12 @@ test('renderer callback QC accepts complete narration and stream metadata', () =
 
 
 test('private QC test marker is explicit and suppresses public publishing', () => {
-  assert.equal(isPrivateVideoTestTask({ description: '[AUTOPOLIS PRIVATE QC TEST] verify 720p' }), true);
+  const task = { id: 88, title: 'Private QC', deliverable_type: 'video', description: '[AUTOPOLIS PRIVATE QC TEST] verify 720p' };
+  assert.equal(isPrivateVideoTestTask(task), true);
   assert.equal(isPrivateVideoTestTask({ description: 'ordinary customer video' }), false);
   assert.equal(isPrivateVideoTestTask({ description: '[autopolis private qc test] 720p' }), false);
+  const payload = buildVideoRenderPayload({
+    task, result: 'Private test narration', callbackUrl: 'https://autopolis.example/api/video-render-callback',
+  });
+  assert.equal(payload.private_test, true);
 });
