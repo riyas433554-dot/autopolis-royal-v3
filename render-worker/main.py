@@ -682,7 +682,10 @@ def _render_with_ltx_zerogpu(script: str, title: str, deliverable_type: str,
             "high-tier presets are 1536x1024 landscape / 1024x1536 portrait. "
             "Use a provider with verified native target-resolution output."
         )
-    request_width, request_height = _ltx_request_dimensions(target)
+    # Request the Space's documented high-resolution preset, then crop to the
+    # deliverable profile below. Custom 720p dimensions are not a documented
+    # preset and have not been artifact-verified.
+    request_width, request_height = (1024, 1536) if deliverable_type == "reel" else (1536, 1024)
     # Initialize the remote client only after local profile validation, so
     # rejected dimensions do not even contact the public Space.
     client = Client(space, token=token, verbose=False)
