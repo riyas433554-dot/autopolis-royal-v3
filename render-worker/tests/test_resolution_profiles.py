@@ -324,3 +324,19 @@ def test_probe_can_validate_video_only_render_source_but_final_requires_audio(mo
 
     with pytest.raises(RuntimeError, match="video and audio streams"):
         main._probe(str(tmp_path / "final-without-audio.mp4"))
+
+
+def test_auto_provider_keeps_source_jobs_on_existing_hf_provider(monkeypatch):
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    assert main._select_render_source("auto", "source") == "hf_zerogpu"
+
+
+def test_auto_provider_routes_720p_to_agnes_only_when_key_exists(monkeypatch):
+    monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    assert main._select_render_source("auto", "720p") == "agnes_video"
+
+
+def test_auto_provider_rejects_720p_without_agnes_key(monkeypatch):
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="AGNES_API_KEY"):
+        main._select_render_source("auto", "720p")
