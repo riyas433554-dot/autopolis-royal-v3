@@ -256,13 +256,14 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
     class FakeResponse:
         ok = True
         status_code = 200
-        content = b"mp4-bytes"
         headers = {"content-type": "video/mp4"}
 
+        def __init__(self, payload=None, content=b"mp4-bytes"):
+            self.payload = payload
+            self.content = content
+
         def json(self):
-            if self.content == b"mp4-bytes":
-                return {"status": "completed", "url": "https://media.example/video.mp4"}
-            return {"video_id": "video-123"}
+            return self.payload
 
         def raise_for_status(self):
             return None
@@ -272,19 +273,16 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
 
     def fake_post(url, **kwargs):
         calls.append(("post", url, kwargs))
-        response = FakeResponse()
-        response.content = b'{"video_id":"video-123"}'
-        return response
+        return FakeResponse({"video_id": "video-123"}, content=b'{"video_id":"video-123"}')
 
     def fake_get(url, **kwargs):
         calls.append(("get", url, kwargs))
         if "agnesapi" in url:
-            response = FakeResponse()
-            response.content = b'{"status":"completed","url":"https://media.example/video.mp4"}'
-            return response
-        return FakeResponse()
+            return FakeResponse({"status": "completed", "url": "https://media.example/video.mp4"})
+        return FakeResponse(content=b"mp4-bytes")
 
     monkeypatch.setenv("AGNES_API_KEY", "test-key")
+    monkeypatch.setenv("AGNES_VIDEO_MIN_INTERVAL_SECONDS", "0")
     monkeypatch.setattr(main.requests, "post", fake_post)
     monkeypatch.setattr(main.requests, "get", fake_get)
     monkeypatch.setattr(main.time, "sleep", lambda seconds: None)
@@ -298,3 +296,4 @@ def test_agnes_video_flash_submits_720p_and_downloads_completed_video(monkeypatc
     assert request["model"] == "agnes-video-2.5-flash"
     assert request["size"] == "720P"
     assert request["aspect_ratio"] == "9:16"
+    assert request["seconds"] == "12"
