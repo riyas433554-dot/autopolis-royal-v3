@@ -81,10 +81,11 @@ def test_ltx_request_dimensions_round_up_to_model_multiple(target, expected):
     assert main._ltx_request_dimensions(target) == expected
 
 
-def test_ltx_provider_calls_public_space_with_target_dimensions(monkeypatch, tmp_path):
+def test_ltx_provider_uses_documented_preset_then_crops_to_720p(monkeypatch, tmp_path):
     generated = tmp_path / "ltx-generated.mp4"
     generated.write_bytes(b"fake-mp4")
     calls = []
+    commands = []
 
     class FakeClient:
         def __init__(self, space, token=None, verbose=False):
@@ -97,9 +98,9 @@ def test_ltx_provider_calls_public_space_with_target_dimensions(monkeypatch, tmp
     monkeypatch.setattr(main, "Client", FakeClient)
     monkeypatch.setattr(main, "_scene_prompts", lambda script, limit: ["A cinematic scene"])
     monkeypatch.setattr(main, "_probe", lambda path: {
-        "width": 1920, "height": 1088, "duration_seconds": 10.0,
+        "width": 1536, "height": 1024, "duration_seconds": 10.0,
     })
-    monkeypatch.setattr(main.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main.subprocess, "run", lambda command, *args, **kwargs: commands.append(command))
     monkeypatch.setattr(main.os.path, "getsize", lambda path: 1)
     monkeypatch.setenv("LTX_ZEROGPU_SPACE", "Lightricks/LTX-2-3")
     monkeypatch.setenv("LTX_ZEROGPU_CLIP_SECONDS", "10")
@@ -109,9 +110,10 @@ def test_ltx_provider_calls_public_space_with_target_dimensions(monkeypatch, tmp
     )
 
     predict = next(call for call in calls if call[0] == "predict")
-    assert predict[1][6] == 736
-    assert predict[1][7] == 1280
+    assert predict[1][6] == 1024
+    assert predict[1][7] == 1536
     assert predict[2]["api_name"] == "/generate_video"
+    assert any("crop=1280:720" in str(command) for command in commands)
     assert result.endswith("ltx-visuals.mp4")
 
 def test_high_resolution_qc_rejects_static_video_tail_when_visuals_are_short():
@@ -163,7 +165,7 @@ def test_ltx_concat_manifest_separates_multiple_clips_with_real_newlines(monkeyp
     monkeypatch.setattr(main, "Client", FakeClient)
     monkeypatch.setattr(main, "_scene_prompts", lambda script, limit: ["Scene one", "Scene two"])
     monkeypatch.setattr(main, "_probe", lambda path: {
-        "width": 1920, "height": 1088, "duration_seconds": 10.0,
+        "width": 1536, "height": 1024, "duration_seconds": 10.0,
     })
     monkeypatch.setattr(main.subprocess, "run", fake_run)
     monkeypatch.setattr(main.os.path, "getsize", lambda path: 1)
