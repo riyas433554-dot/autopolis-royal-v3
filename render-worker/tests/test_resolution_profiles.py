@@ -4,7 +4,8 @@ from pydantic import ValidationError
 import main
 
 
-def test_render_request_accepts_explicit_resolution_profile():
+def test_render_request_accepts_explicit_resolution_profile(monkeypatch):
+    monkeypatch.setenv("VIDEO_RENDER_PROVIDER", "ai_video_studio")
     request = main.RenderJobRequest(
         task_id=1, title="Cinematic", deliverable_type="video",
         script="Narration", resolution="1080p",
@@ -129,3 +130,13 @@ def test_high_resolution_ltx_route_is_disabled_until_explicitly_enabled():
 def test_explicit_ltx_provider_requires_enable_flag():
     with pytest.raises(RuntimeError, match="LTX ZeroGPU is disabled"):
         main._select_render_source("ltx_zerogpu", "source", ltx_enabled=False)
+
+def test_render_request_rejects_high_resolution_when_ltx_is_disabled(monkeypatch):
+    monkeypatch.setenv("VIDEO_RENDER_PROVIDER", "hf_zerogpu")
+    monkeypatch.setenv("LTX_ZEROGPU_ENABLED", "false")
+    with pytest.raises(ValidationError, match="LTX ZeroGPU is disabled"):
+        main.RenderJobRequest(
+            task_id=1, title="Cinematic", deliverable_type="video",
+            script="Narration", resolution="1080p",
+            callback_url="https://autopolis.example/callback",
+        )
